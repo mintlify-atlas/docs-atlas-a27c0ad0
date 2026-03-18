@@ -1,0 +1,103 @@
+{
+  "projectType": "general",
+  "projectName": "Virus Hunter: Code Defender",
+  "projectDescription": "A 2D arcade-style cybersecurity education game built with Python and Pygame that demonstrates real-world concepts like reverse shells, persistence mechanisms, and system cleanup through interactive gameplay.",
+  "theme": "aspen",
+  "primaryColor": "#00FFC8",
+  "lightColor": "#00CC9F",
+  "darkColor": "#00A87D",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Gameplay",
+            "pages": [
+              "gameplay/overview",
+              "gameplay/controls",
+              "gameplay/levels"
+            ]
+          },
+          {
+            "group": "Cybersecurity Concepts",
+            "pages": [
+              "concepts/dependency-management",
+              "concepts/reverse-shell",
+              "concepts/persistence",
+              "concepts/cleanup"
+            ]
+          },
+          {
+            "group": "Tools & Configuration",
+            "pages": [
+              "tools/listener",
+              "tools/cleanup-tool",
+              "tools/configuration"
+            ]
+          },
+          {
+            "group": "Safety & Ethics",
+            "pages": [
+              "safety/lab-environment",
+              "safety/consent-screen"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Code Reference",
+        "groups": [
+          {
+            "group": "Game Modules",
+            "pages": [
+              "reference/main-game",
+              "reference/player",
+              "reference/terminals",
+              "reference/ui",
+              "reference/bullet"
+            ]
+          },
+          {
+            "group": "Cyber Modules",
+            "pages": [
+              "reference/network-shell",
+              "reference/persistence-module",
+              "reference/dependency-checker"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "4-level cybersecurity education game with progressive difficulty",
+    "Real reverse shell demonstration using TCP socket communication on port 5050",
+    "Cross-platform persistence simulation (Windows Registry, Linux Crontab, macOS LaunchAgent)",
+    "Dependency auto-installer that ensures pygame-ce is available",
+    "Interactive consent screen enforcing ethical use acknowledgment",
+    "Full-featured listener CLI with file download, directory navigation, and heartbeat",
+    "Cleanup tool to safely remove all simulated persistence artifacts",
+    "Arcade gameplay: WASD movement, Space for plasma bolts, E to interact with terminals"
+  ],
+  "publicApiSurface": [
+    "python game/main_game.py [--windowed] [--host <IP>] [--bg]",
+    "python tools/listener.py",
+    "python tools/cleanup_tool.py",
+    "ReverseShell(host, port) — cyber_modules/network_shell.py",
+    "ReverseShell.start() — begin background shell thread",
+    "ReverseShell.stop() — gracefully terminate shell",
+    "create_persistence(host) — cyber_modules/persistence.py",
+    "remove_persistence() — cyber_modules/persistence.py",
+    "ensure_dependencies(packages) — cyber_modules/dependency_checker.py",
+    "Shell commands: ls, cd, cat, pwd, download <file>, quit"
+  ]
+}
