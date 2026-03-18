@@ -1,0 +1,198 @@
+---
+title: 'UI / HUD'
+description: 'HUD rendering, scan progress bar, CRT overlay, matrix rain, objective pointer, and TerminalUI box helper.'
+keywords: ['hud', 'health bar', 'scan progress', 'CRT', 'matrix rain', 'pointer', 'terminal UI']
+---
+
+# UI / HUD
+
+`game/ui.py` provides two classes: `HUD`, which renders all in-game heads-up display elements each frame, and `TerminalUI`, a static helper for drawing bordered UI boxes.
+
+---
+
+## `HUD` class
+
+```python
+class HUD:
+    def __init__(self, screen_width: int, screen_height: int) -> None
+    def draw(self, screen: pygame.Surface, player, mission_text: str,
+             scan_progress: int, level: int) -> None
+    def draw_pointer(self, screen: pygame.Surface,
+                     player_pos: pygame.Vector2,
+                     target_pos: tuple) -> None
+```
+
+### `__init__(screen_width, screen_height)`
+
+<ParamField path="screen_width" type="int" required>
+  Horizontal resolution of the display. Stored for positioning HUD elements and pre-baking the CRT surface.
+</ParamField>
+
+<ParamField path="screen_height" type="int" required>
+  Vertical resolution of the display. Used for CRT scanline height and scan-bar vertical placement.
+</ParamField>
+
+Initialises fonts and pre-renders the CRT scanline overlay during construction:
+
+```python
+self.font        = pygame.font.SysFont("Consolas", 18)
+self.title_font  = pygame.font.SysFont("Consolas", 24, bold=True)
+self.glow_color  = (0, 255, 200)          # Cyan-green accent
+self.matrix_font = pygame.font.SysFont("Consolas", 14)
+self.matrix_chars = "01ABCDEF!@#$%^&*"
+```
+
+The CRT surface is a full-screen `pygame.SRCALPHA` surface with a semi-transparent black line every 3 pixels:
+
+```python
+for y in range(0, screen_height, 3):
+    pygame.draw.line(self.crt_surface, (0, 0, 0, 60), (0, y), (screen_width, y))
+```
+
+Pre-baking the surface means the scanlines are composited with a single `blit()` each frame rather than redrawn.
+
+---
+
+### `draw(screen, player, mission_text, scan_progress, level)`
+
+The primary HUD render call. Must be called once per frame after all world-space sprites have been drawn.
+
+<ParamField path="screen" type="pygame.Surface" required>
+  The active display surface.
+</ParamField>
+
+<ParamField path="player" type="Player" required>
+  The player sprite. `player.health` and `player.max_health` are read for the health bar.
+</ParamField>
+
+<ParamField path="mission_text" type="str" required>
+  Short string describing the current objective. Rendered in 18 pt Consolas in the top-right area.
+</ParamField>
+
+<ParamField path="scan_progress" type="int" required>
+  Integer 0–100 controlling the decryption bar fill. The caller normalises the raw `scan_progress` variable (which runs 0–200 across Levels 1 and 4) before passing it in.
+</ParamField>
+
+<ParamField path="level" type="int" required>
+  Current level number (1–4). Controls whether the matrix rain effect is rendered.
+</ParamField>
+
+#### Render order
+
+<Steps>
+  <Step title="Matrix rain (Level 1 only)">
+    Calls `_draw_matrix(screen)`, which places 5 random characters from `"01ABCDEF!@#$%^&*"` at random screen positions per frame:
+    ```python
+    color = (0, 100, 50) if random.random() > 0.1 else (0, 255, 100)
+    ```
+    90% of characters are dim green; 10% are bright green to simulate a flicker.
+  </Step>
+  <Step title="Health bar">
+    A 200×20 px bar at position `(20, 20)`. Gray background `(50, 50, 50)`, green fill `(0, 255, 100)`:
+    ```python
+    health_width = (player.health / player.max_health) * 200
+    pygame.draw.rect(screen, (0, 255, 100), (20, 20, health_width, 20), border_radius=5)
+    ```
+    Label `"CORE INTEGRITY: {health}%"` in 18 pt Consolas `(200, 255, 200)` at `(20, 45)`.
+  </Step>
+  <Step title="Mission objective panel">
+    `"MISSION OBJECTIVE"` title in 24 pt bold `(0, 255, 200)` at `(screen_width - 250, 20)`.
+    `mission_text` description in 18 pt `(150, 200, 200)` at `(screen_width - 250, 50)`.
+  </Step>
+  <Step title="Scan progress bar (conditional)">
+    Only rendered when `scan_progress > 0`.
+
+    The bar is 300 px wide, centred horizontally at `screen_height - 50`:
+    ```python
+    p_rect = (screen_width // 2 - 150, screen_height - 50, 300, 10)
+    pygame.draw.rect(screen, (50, 50, 50), p_rect)             # background
+    pygame.draw.rect(screen, glow_color,
+                     (p_rect[0], p_rect[1], 3 * scan_progress, 10))  # fill
+    ```
+    The fill width is `3 * scan_progress`, so at `scan_progress = 100` the bar is fully filled (300 px).
+
+    Label `"DECRYPTING SYSTEM... {scan_progress}%"` in cyan-green at `(screen_width // 2 - 80, screen_height - 80)`.
+  </Step>
+  <Step title="CRT scanline overlay">
+    The pre-baked `crt_surface` is blitted at `(0, 0)`, overlaying every element drawn so far with semi-transparent horizontal scanlines (alpha 60, every 3 px).
+  </Step>
+</Steps>
+
+---
+
+### `draw_pointer(screen, player_pos, target_pos)`
+
+Draws a directional indicator pointing from the player toward an off-screen objective.
+
+<ParamField path="screen" type="pygame.Surface" required>
+  The active display surface.
+</ParamField>
+
+<ParamField path="player_pos" type="pygame.Vector2" required>
+  The player's current position in screen coordinates.
+</ParamField>
+
+<ParamField path="target_pos" type="tuple" required>
+  The target's position in screen coordinates, typically a terminal's `rect.center`.
+</ParamField>
+
+If the distance between `player_pos` and `target_pos` is less than 100 px, the pointer is suppressed and the function returns immediately.
+
+Otherwise, it computes a unit direction vector and places the indicator 60 px ahead of the player:
+
+```python
+direction    = pygame.Vector2(target_pos) - pygame.Vector2(player_pos)
+direction    = direction.normalize()
+pointer_pos  = pygame.Vector2(player_pos) + direction * 60
+
+# Dot
+pygame.draw.circle(screen, self.glow_color, pointer_pos, 5)
+
+# Arrow triangle
+p1 = pointer_pos + direction * 10
+p2 = pointer_pos + direction.rotate( 135) * 8
+p3 = pointer_pos + direction.rotate(-135) * 8
+pygame.draw.polygon(screen, self.glow_color, [p1, p2, p3])
+```
+
+The indicator is always drawn in the `glow_color` cyan-green `(0, 255, 200)` and rotates continuously to point at the target as the player moves.
+
+---
+
+## `TerminalUI` class
+
+A purely static utility class for drawing a bordered UI panel with a title label. No instance state.
+
+```python
+class TerminalUI:
+    @staticmethod
+    def draw_box(screen: pygame.Surface, rect: tuple, title: str) -> None
+```
+
+### `draw_box(screen, rect, title)`
+
+<ParamField path="screen" type="pygame.Surface" required>
+  The active display surface to draw on.
+</ParamField>
+
+<ParamField path="rect" type="tuple" required>
+  A 4-tuple `(x, y, width, height)` defining the panel bounds.
+</ParamField>
+
+<ParamField path="title" type="str" required>
+  Text to render in the top-left corner of the box in 20 pt bold Consolas.
+</ParamField>
+
+Draws a dark filled background `(5, 15, 25)`, a 2-px cyan border `(0, 200, 255)`, and the title string at `(rect.x + 10, rect.y + 10)` in cyan:
+
+```python
+pygame.draw.rect(screen, (5, 15, 25), rect)         # fill
+pygame.draw.rect(screen, (0, 200, 255), rect, 2)    # border
+font = pygame.font.SysFont("Consolas", 20, bold=True)
+text = font.render(title, True, (0, 200, 255))
+screen.blit(text, (rect[0] + 10, rect[1] + 10))
+```
+
+<Tip>
+  `TerminalUI.draw_box` can be called with any `pygame.Rect` object as well as a raw 4-tuple — `pygame.draw.rect` accepts both.
+</Tip>

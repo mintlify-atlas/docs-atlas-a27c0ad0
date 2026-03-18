@@ -1,0 +1,122 @@
+---
+title: 'Lab environment'
+description: 'How to set up a safe, isolated VM before running Virus Hunter: Code Defender.'
+keywords: ['VM', 'virtual machine', 'lab', 'safety', 'isolation', 'VirtualBox', 'VMware']
+---
+
+<Warning>
+Virus Hunter: Code Defender installs real persistence mechanisms and opens a real reverse shell. It must only be run inside a dedicated virtual machine on a network that is isolated from your personal and work systems.
+</Warning>
+
+## Why a VM is required
+
+The game is a working cybersecurity demonstration, not a simulation. When you start it:
+
+- A reverse shell connects to your listener machine over TCP.
+- A persistence entry is written to your system (Windows Registry, Linux crontab, or macOS LaunchAgent) so the shell restarts after a reboot.
+- A background process may run after the game window closes.
+
+Running this on a physical host or a shared network risks exposing your files, credentials, and other machines to the shell session.
+
+## Recommended VM setup
+
+<CardGroup cols={2}>
+  <Card title="VirtualBox" icon="box">
+    Free and cross-platform. Download from [virtualbox.org](https://www.virtualbox.org). Any guest OS supported by VirtualBox works.
+  </Card>
+  <Card title="VMware" icon="server">
+    VMware Workstation Player (free for personal use) or VMware Fusion on macOS. Supports Windows and Linux guests.
+  </Card>
+</CardGroup>
+
+Any Linux or Windows VM is suitable as the game host. A minimal install is fine — the only requirements are Python 3 and the game's dependencies.
+
+## Network configuration
+
+<Tabs>
+  <Tab title="Host-only (recommended)">
+    Create a host-only network adapter in your VM software. The VM can only communicate with the host machine — it cannot reach the internet or other LAN devices.
+
+    This is the safest option: the listener on your host receives the shell, and nothing else on your network is reachable from the VM.
+  </Tab>
+  <Tab title="NAT">
+    NAT gives the VM outbound internet access through the host. The listener must be configured to receive on the NAT interface, usually by port-forwarding `5050` in the VM settings.
+
+    This works but is less isolated than host-only.
+  </Tab>
+  <Tab title="Bridged (not recommended)">
+    Bridged mode puts the VM directly on your LAN with its own IP. The reverse shell is then accessible to any machine on that network.
+
+    Do not use bridged networking unless you control the entire network and have explicit permission from all stakeholders.
+  </Tab>
+</Tabs>
+
+## Take a snapshot before running
+
+Before starting the game for the first time, take a snapshot of the VM in its clean state. This gives you a one-click restore point if cleanup fails or if you want to repeat the exercise from scratch.
+
+<Steps>
+  <Step title="VirtualBox">
+    With the VM powered off or saved, go to **Machine → Take Snapshot**. Name it something like `clean-baseline`.
+  </Step>
+  <Step title="VMware">
+    Go to **VM → Snapshot → Take Snapshot**. Give it a descriptive name.
+  </Step>
+</Steps>
+
+## What the game does to the system
+
+| Action | Detail |
+|---|---|
+| Reverse shell | Connects outbound to `--host` on port `5050`. Provides a real interactive shell. |
+| Persistence marker | Creates `cyber_modules/simulated_startup/system_defender_autorun.txt`. |
+| Windows Registry | Writes `HKCU\...\Run\VirusHunterAgent` pointing at the game executable. |
+| Linux crontab | Adds an `@reboot` entry that restarts the shell on boot. |
+| macOS LaunchAgent | Installs `com.v-hunter.agent.plist` in `~/Library/LaunchAgents/`. |
+
+## How to confirm you're in a safe environment
+
+Before launching the game, verify:
+
+- [ ] You are inside a VM, not on a physical host.
+- [ ] The VM network adapter is set to host-only or NAT (not bridged to a production LAN).
+- [ ] You have taken a snapshot of the clean VM state.
+- [ ] The `--host` IP points to your listener machine, not to any shared infrastructure.
+- [ ] You have explicit permission to run penetration-testing tools on this environment (if it's not solely your own).
+
+## What NOT to do
+
+<Warning>
+- Do not run the game on a work computer or any machine with sensitive data.
+- Do not run the game on a corporate or school network without written authorization.
+- Do not share the listener port (`5050`) with anyone who should not have shell access to the VM.
+- Do not skip the cleanup step — persistence survives reboots.
+</Warning>
+
+## After-session checklist
+
+<Steps>
+  <Step title="Run the cleanup tool">
+    ```bash
+    python tools/cleanup_tool.py
+    ```
+  </Step>
+  <Step title="Verify cleanup manually">
+    Follow the platform-specific verification steps in [Cleanup tool](/tools/cleanup-tool).
+  </Step>
+  <Step title="Confirm no background processes remain">
+    <Tabs>
+      <Tab title="Linux / macOS">
+        ```bash
+        pgrep -a -f main_game.py
+        ```
+      </Tab>
+      <Tab title="Windows">
+        Open Task Manager and confirm no `VirusHunter.exe` or `pythonw.exe` processes are listed.
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Revert to snapshot (optional)">
+    If you want a guaranteed clean state for the next session, restore the VM to the snapshot you took before running the game.
+  </Step>
+</Steps>

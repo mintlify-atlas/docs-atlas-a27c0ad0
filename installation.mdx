@@ -1,0 +1,197 @@
+---
+title: "Installation"
+description: "Install Python, clone the repository, and get Virus Hunter: Code Defender running on your machine."
+---
+
+<Warning>
+  Run this project **only** inside a controlled virtual machine or isolated lab network. It creates real reverse shells and persistence artifacts. Never install or run it on a production system or against any target you do not own.
+</Warning>
+
+## Prerequisites
+
+Before you begin, make sure the following are available on your system:
+
+- **Python 3.8 or later** — [python.org/downloads](https://www.python.org/downloads/)
+- **pip** — bundled with Python 3.4+; verify with `pip --version`
+- **Git** — to clone the repository (or download the ZIP from GitHub)
+- **Port 5050 open** — required for the listener to accept remote connections
+
+<Note>
+  The game auto-detects whether `pygame-ce` is installed and offers to install it for you at startup via `cyber_modules/dependency_checker.py`. Manual installation is also supported.
+</Note>
+
+## Installation steps
+
+<Steps>
+  <Step title="Clone the repository">
+    Download the source code to your local machine.
+
+    <CodeGroup>
+
+    ```bash Linux / macOS
+    git clone https://github.com/cal250/Virus-Hunter-Code-Defender.git
+    cd Virus-Hunter-Code-Defender
+    ```
+
+    ```bash Windows (PowerShell)
+    git clone https://github.com/cal250/Virus-Hunter-Code-Defender.git
+    cd Virus-Hunter-Code-Defender
+    ```
+
+    </CodeGroup>
+
+    Alternatively, download and extract the ZIP archive from the GitHub repository page, then open a terminal in the extracted folder.
+  </Step>
+
+  <Step title="Create a virtual environment (recommended)">
+    Isolate the project dependencies from your system Python installation.
+
+    <CodeGroup>
+
+    ```bash Linux / macOS
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+
+    ```bash Windows (PowerShell)
+    python -m venv .venv
+    .venv\Scripts\Activate.ps1
+    ```
+
+    </CodeGroup>
+
+    <Tip>
+      Using a virtual environment keeps `pygame-ce` scoped to this project and makes cleanup straightforward.
+    </Tip>
+  </Step>
+
+  <Step title="Install dependencies">
+    The only required dependency is `pygame-ce`. Install it manually, or let the game install it automatically on first launch.
+
+    **Manual install:**
+
+    <CodeGroup>
+
+    ```bash Linux / macOS
+    pip3 install -r requirements.txt
+    ```
+
+    ```bash Windows (PowerShell)
+    pip install -r requirements.txt
+    ```
+
+    </CodeGroup>
+
+    **Auto-install:** Skip this step and run the game directly. `cyber_modules/dependency_checker.py` checks for `pygame-ce` at startup and prompts you to install it if it is missing.
+  </Step>
+
+  <Step title="Verify the installation">
+    Confirm Python and pygame-ce are available:
+
+    ```bash
+    python --version
+    python -c "import pygame; print(pygame.version.ver)"
+    ```
+
+    You should see Python 3.8 or later and a pygame-ce version string.
+  </Step>
+
+  <Step title="Launch the game">
+    Start the game from the repository root:
+
+    ```bash
+    python game/main_game.py
+    ```
+
+    See [Optional flags](#optional-flags) below for windowed mode and custom host options.
+  </Step>
+</Steps>
+
+## Directory structure
+
+```
+Virus-Hunter-Code-Defender/
+├── game/
+│   └── main_game.py          # Main game entry point
+├── cyber_modules/
+│   ├── dependency_checker.py # Auto-installs pygame-ce if missing
+│   ├── network_shell.py      # Reverse shell implementation
+│   └── persistence.py        # Cross-platform persistence module
+├── tools/
+│   ├── listener.py           # TCP listener (run on the attacker/instructor machine)
+│   └── cleanup_tool.py       # Removes all artifacts created during a session
+├── requirements.txt          # Lists pygame-ce
+├── VirusHunter.spec          # PyInstaller spec for standalone game executable
+└── CleanupTool.spec          # PyInstaller spec for standalone cleanup executable
+```
+
+## Optional flags
+
+Pass flags to `game/main_game.py` to customize startup behavior:
+
+| Flag | Description |
+|------|-------------|
+| `--windowed` | Run in a window instead of fullscreen |
+| `--host <IP>` | Override the default listener IP address |
+| `--bg` | Start the listener process in the background |
+
+Example:
+
+```bash
+# Windowed mode with a custom listener IP
+python game/main_game.py --windowed --host 192.168.1.100
+```
+
+## Standalone executables
+
+PyInstaller spec files are included if you need to distribute the game without requiring Python on the target machine.
+
+```bash
+# Build the game executable
+pyinstaller VirusHunter.spec
+
+# Build the cleanup tool executable
+pyinstaller CleanupTool.spec
+```
+
+Outputs are placed in the `dist/` directory.
+
+## Platform notes
+
+<CardGroup cols={3}>
+  <Card title="Windows" icon="windows">
+    Fully supported. Persistence uses the Windows Registry (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Run PowerShell or Command Prompt as a standard user — no elevation required for the game itself.
+  </Card>
+  <Card title="Linux" icon="linux">
+    Fully supported. Persistence uses a crontab entry. Ensure your user has write access to the crontab.
+  </Card>
+  <Card title="macOS" icon="apple">
+    Fully supported. Persistence uses a LaunchAgent plist in `~/Library/LaunchAgents/`.
+  </Card>
+</CardGroup>
+
+## Firewall and networking
+
+The listener binds to `0.0.0.0:5050`. For remote (two-PC) mode, **port 5050 must be reachable** from the game machine to the listener machine.
+
+<CodeGroup>
+
+```bash Linux (ufw)
+# Allow inbound connections on port 5050
+sudo ufw allow 5050/tcp
+```
+
+```bash macOS
+# macOS prompts automatically when an app binds a port.
+# If blocked, allow Python in System Settings > Network > Firewall.
+```
+
+```bash Windows (PowerShell — run as Administrator)
+netsh advfirewall firewall add rule name="Virus Hunter Listener" dir=in action=allow protocol=TCP localport=5050
+```
+
+</CodeGroup>
+
+<Warning>
+  Only open port 5050 within an isolated lab network or virtual machine host-only adapter. Do not expose this port on an internet-connected or shared corporate network.
+</Warning>

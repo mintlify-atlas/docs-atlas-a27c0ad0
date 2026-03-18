@@ -1,0 +1,172 @@
+---
+title: 'Player'
+description: 'The Player sprite: movement, boundary clamping, and the motion trail render system.'
+keywords: ['player', 'movement', 'trail', 'health', 'sprite']
+---
+
+# Player
+
+`game/player.py` defines the `Player` class, a `pygame.sprite.Sprite` that handles movement input, screen-boundary clamping, motion trail rendering, and health state.
+
+```python
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x: int, y: int) -> None
+    def handle_input(self) -> None
+    def update(self, screen_width: int, screen_height: int) -> None
+    def draw(self, screen: pygame.Surface) -> None
+```
+
+---
+
+## Attributes
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `image` | `pygame.Surface` | 32×32 SRCALPHA | Neon-green rounded rectangle sprite. Outer border `(0, 255, 150)`, inner fill `(0, 100, 50)`. |
+| `rect` | `pygame.Rect` | Centred at `(x, y)` | Collision and positioning rect derived from `image`. |
+| `pos` | `pygame.Vector2` | `(x, y)` | Sub-pixel position used for all movement calculations. |
+| `trail_positions` | `list[tuple[float, float]]` | `[]` | Ring buffer of the last 10 positions, newest first. |
+| `speed` | `int` | `6` | Movement speed in pixels per frame (applied after normalisation). |
+| `health` | `int` | `100` | Current health. Decremented by 15 on enemy contact. |
+| `max_health` | `int` | `100` | Maximum health. Used by the HUD to calculate the health bar fill ratio. |
+
+---
+
+## `__init__(x, y)`
+
+<ParamField path="x" type="int" required>
+  Horizontal spawn position in screen coordinates. Typically `width // 2`.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Vertical spawn position in screen coordinates. Typically `height // 2`.
+</ParamField>
+
+Constructs the sprite surface, sets `pos` and `rect`, and initialises all attributes to their defaults. The sprite image is a 32×32 surface with `pygame.SRCALPHA`, drawn with two rounded rectangles to create a glowing terminal-cursor look.
+
+---
+
+## `handle_input()`
+
+Reads the current keyboard state and moves the player. Called internally by `update()`.
+
+```python
+def handle_input(self) -> None:
+    keys = pygame.key.get_pressed()
+    move = pygame.Vector2(0, 0)
+    if keys[pygame.K_w] or keys[pygame.K_UP]:   move.y -= 1
+    if keys[pygame.K_s] or keys[pygame.K_DOWN]:  move.y += 1
+    if keys[pygame.K_a] or keys[pygame.K_LEFT]:  move.x -= 1
+    if keys[pygame.K_d] or keys[pygame.K_RIGHT]: move.x += 1
+
+    if move.length() > 0:
+        move = move.normalize() * self.speed
+        self.pos += move
+        self.rect.center = self.pos
+```
+
+### Supported keys
+
+| Action | Keys |
+|---|---|
+| Move up | `W`, `↑` |
+| Move down | `S`, `↓` |
+| Move left | `A`, `←` |
+| Move right | `D`, `→` |
+
+The move vector is **normalised before scaling**, so diagonal movement is the same speed as cardinal movement (no speed boost when pressing two keys simultaneously).
+
+<Tip>
+  The main game loop also reads key state independently to track `last_direction` for bullet firing. Both reads happen from the same `pygame.key.get_pressed()` snapshot.
+</Tip>
+
+---
+
+## `update(screen_width, screen_height)`
+
+Called once per frame by the game loop via `player.update(width, height)`.
+
+<ParamField path="screen_width" type="int" required>
+  Current screen width in pixels. Used as the right boundary for clamping.
+</ParamField>
+
+<ParamField path="screen_height" type="int" required>
+  Current screen height in pixels. Used as the bottom boundary for clamping.
+</ParamField>
+
+Execution order:
+
+<Steps>
+  <Step title="Process input">
+    Calls `handle_input()` to apply keyboard movement to `self.pos`.
+  </Step>
+  <Step title="Clamp to screen bounds">
+    Ensures the player sprite centre never gets closer than 16 px to any screen edge:
+    ```python
+    self.pos.x = max(16, min(screen_width  - 16, self.pos.x))
+    self.pos.y = max(16, min(screen_height - 16, self.pos.y))
+    self.rect.center = self.pos
+    ```
+    The 16 px margin equals half the sprite width/height, so the player is fully visible at all times.
+  </Step>
+  <Step title="Update trail buffer">
+    Inserts the current position at the front of `trail_positions` and trims the list to 10 entries:
+    ```python
+    self.trail_positions.insert(0, tuple(self.pos))
+    if len(self.trail_positions) > 10:
+        self.trail_positions.pop()
+    ```
+    The oldest position is always at index 9.
+  </Step>
+</Steps>
+
+<Note>
+  Wall collision is handled in the main game loop *after* `player.update()` returns. If the player's rect overlaps a wall rect, `player.pos` is reset to its pre-update value.
+</Note>
+
+---
+
+## `draw(screen)`
+
+Renders the motion trail and the player sprite.
+
+<ParamField path="screen" type="pygame.Surface" required>
+  The active Pygame display surface.
+</ParamField>
+
+### Trail rendering
+
+Iterates over `trail_positions` from newest (index 0) to oldest (index 9). Each ghost frame is a semi-transparent cyan rectangle that shrinks and fades with age:
+
+```python
+for i, pos in enumerate(self.trail_positions):
+    alpha = 150 - (i * 15)   # 150, 135, 120, ..., 15
+    size  = 32  - (i * 2)    # 32,  30,  28,  ..., 14
+    if size <= 0:
+        continue
+    s = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.rect(s, (0, 200, 255, alpha), (0, 0, size, size), 2, border_radius=2)
+    screen.blit(s, s.get_rect(center=pos))
+```
+
+| Frame index | Alpha | Size (px) |
+|---|---|---|
+| 0 (newest) | 150 | 32 |
+| 1 | 135 | 30 |
+| 2 | 120 | 28 |
+| … | … | … |
+| 9 (oldest) | 15 | 14 |
+
+Only the border of each ghost is drawn (stroke width 2), giving a wireframe ghost effect.
+
+### Sprite rendering
+
+After the trail, the player's own `image` is blitted at `self.rect`:
+
+```python
+screen.blit(self.image, self.rect)
+```
+
+<Note>
+  `draw()` is called directly by the main loop and does not use the shake offset, so the player sprite stays visually stable while the world shakes around it.
+</Note>

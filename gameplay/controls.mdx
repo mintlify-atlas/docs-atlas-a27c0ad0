@@ -1,0 +1,94 @@
+---
+title: "Controls"
+description: "Keyboard controls for the Antivirus Avatar, shooting mechanics, screen shake values, and listener shell commands."
+---
+
+## Movement
+
+The Antivirus Avatar moves at **6 pixels per frame** in any of the four cardinal directions.
+
+| Key | Action |
+|---|---|
+| `W` or `Up Arrow` | Move up |
+| `S` or `Down Arrow` | Move down |
+| `A` or `Left Arrow` | Move left |
+| `D` or `Right Arrow` | Move right |
+
+## Combat
+
+| Key | Action |
+|---|---|
+| `Space` | Fire a plasma bolt / skip scan animation in Level 1 |
+
+Plasma bolts travel in the **last movement direction** recorded before firing. If you stop moving and shoot, the bolt continues in whichever direction you were last heading. Plan your shots before you halt.
+
+## Interaction and system
+
+| Key | Action |
+|---|---|
+| `E` | Interact with the active terminal (must be within 80 px) |
+| `Esc` | Emergency exit — quits the game immediately |
+
+<Note>
+  Terminal interaction requires you to be within **80 pixels** of the terminal object. The objective pointer arrow guides you to the correct location. Watch the mission objective text in the HUD — it updates when you enter interaction range.
+</Note>
+
+## Screen shake reference
+
+Screen shake intensity varies by event, giving tactile feedback about what just happened:
+
+| Event | Shake intensity |
+|---|---|
+| Fire plasma bolt | 5 units |
+| Enemy killed | 10 units |
+| Player takes damage | 20 units |
+
+## Player stats
+
+| Stat | Value |
+|---|---|
+| Movement speed | 6 px/frame |
+| Max health | 100 HP |
+| Damage per enemy collision | 15 HP |
+| Motion trail length | 10 positions |
+| Trail alpha range | 150 → 0 (fade) |
+| Sprite size | 32×32 px |
+
+## Listener shell commands
+
+Once the reverse shell connects in Level 2, the operator controls the listener terminal using these commands:
+
+<Tabs>
+  <Tab title="Linux / macOS">
+
+| Command | Description |
+|---|---|
+| `ls` | List files in the current directory |
+| `cd <path>` | Change directory |
+| `cat <file>` | Print file contents |
+| `pwd` | Print current working directory |
+| `download <filename>` | Download a file from the target |
+| `quit` | Close the shell connection |
+
+  </Tab>
+  <Tab title="Windows">
+
+| Command | Description |
+|---|---|
+| `dir` | List files in the current directory |
+| `cd <path>` | Change directory |
+| `type <file>` | Print file contents |
+| `echo %cd%` | Print current working directory |
+| `download <filename>` | Download a file from the target |
+| `quit` | Close the shell connection |
+
+  </Tab>
+</Tabs>
+
+<Tip>
+  Launch the game with the `--windowed` flag when you plan to use the listener shell. A smaller game window lets you keep both the listener terminal and the game visible simultaneously without switching focus.
+
+  ```bash
+  python main.py --windowed
+  ```
+</Tip>

@@ -1,0 +1,103 @@
+---
+title: 'Dependency management'
+description: 'How Virus Hunter auto-installs its dependencies, why that matters for security, and what it teaches about supply chain attacks.'
+keywords: ['dependency management', 'supply chain attack', 'pip install', 'importlib', 'cybersecurity education']
+---
+
+When `main_game.py` starts, the very first thing it does is call `ensure_dependencies(["pygame"])`. Before any game logic runs, the runtime checks whether required packages are present and installs them if not.
+
+This pattern mirrors how real-world malware bootstraps itself — making the auto-installer both a practical necessity and a teaching moment.
+
+## How the auto-installer works
+
+<Steps>
+  <Step title="Check whether the package is already installed">
+    `_is_installed()` attempts to import the module by name using `importlib.import_module`. If the import succeeds, the package is present and no further action is taken.
+
+    ```python
+    def _is_installed(module_name: str) -> bool:
+        try:
+            importlib.import_module(module_name)
+            return True
+        except Exception:
+            return False
+    ```
+
+    Using `importlib` rather than checking `pip list` means the check is fast, cross-platform, and reflects the actual import state of the running interpreter.
+  </Step>
+
+  <Step title="Install any missing packages">
+    For each package that failed the import check, `_install_package()` invokes `pip` as a subprocess, targeting the same Python executable that is currently running (`sys.executable`). This avoids version-mismatch issues when multiple Python installations exist on a machine.
+
+    ```python
+    def _install_package(package: str) -> bool:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+            return True
+        except Exception:
+            return False
+    ```
+  </Step>
+
+  <Step title="Raise a RuntimeError if installation fails">
+    If `_install_package` returns `False`, `ensure_dependencies` raises a `RuntimeError` with a human-readable message that includes the exact command a user can run manually.
+
+    ```python
+    def ensure_dependencies(packages: Iterable[str]) -> None:
+        missing = [p for p in packages if not _is_installed(p)]
+        if not missing:
+            return
+        for pkg in missing:
+            ok = _install_package(pkg)
+            if not ok:
+                raise RuntimeError(
+                    f"Failed to install {pkg}. Please run: {sys.executable} -m pip install {pkg}"
+                )
+    ```
+
+    The error is intentionally fatal. In a classroom demo, a silent failure would be confusing. A clear crash with a printed fix is more educational and easier to triage.
+  </Step>
+</Steps>
+
+## Why RuntimeError on failure?
+
+Failing loudly is a **fail-safe** design choice. If the game cannot install `pygame` — perhaps because the machine has no internet access or pip is restricted — continuing to run would produce cryptic `ModuleNotFoundError` exceptions deep in unrelated code. A single top-level `RuntimeError` surfaces the real problem immediately.
+
+<Note>
+  In a sandboxed classroom environment, pip may be restricted by policy. If students see this error, they should ask their instructor to pre-install `pygame` or run the provided setup script.
+</Note>
+
+## Supply chain attacks: the real-world parallel
+
+The auto-installer in Virus Hunter is benign, but the same pattern appears in malicious software:
+
+- A piece of malware drops a Python script that calls `pip install` for a package it needs (network libraries, cryptography tools, C2 frameworks).
+- Because `pip install` fetches code from the internet and executes it, a compromised or typo-squatted package on PyPI can deliver a payload.
+- The installation step often happens silently, in a subprocess, with no visible UI — identical to what `_install_package` does here.
+
+<Warning>
+  Never run Python scripts from untrusted sources without first inspecting any dependency installation calls. A script that installs packages on startup may be pulling in malicious code from the internet.
+</Warning>
+
+## Real supply chain attack examples
+
+| Attack | Method |
+|--------|--------|
+| `event-stream` (npm, 2018) | Malicious maintainer added a dependency that stole Bitcoin wallets |
+| `ctx` / `ultraxml` (PyPI, 2022) | Typo-squatted packages that exfiltrated environment variables |
+| SolarWinds (2020) | Compromised build pipeline injected malware into legitimate software updates |
+
+The common thread: **code you did not write is being executed with your trust level**.
+
+## The educational lesson
+
+<Tip>
+  Always verify what code installs on your system. Before running any script:
+
+  1. Read `import` and `install` calls at the top of the file.
+  2. Check each package name against the official PyPI page — look for typos (`requsts` vs `requests`).
+  3. Review the package's own dependencies; a legitimate top-level package can pull in a malicious transitive dependency.
+  4. In production environments, pin exact versions and use a lock file (`pip-tools`, Poetry, or `uv`) so installs are reproducible and auditable.
+</Tip>
+
+Virus Hunter makes this concrete: you can see the exact packages being installed, trace the code path, and understand that `subprocess.check_call([sys.executable, "-m", "pip", "install", package])` is fundamentally the same operation whether it appears in a game or in malware.

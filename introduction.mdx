@@ -1,0 +1,74 @@
+---
+title: "Virus Hunter: Code Defender"
+description: "A 2D arcade-style cybersecurity education game that teaches real security concepts through interactive gameplay."
+---
+
+<Warning>
+  This project demonstrates real cybersecurity concepts including reverse shells and persistence mechanisms. Use it **only** in a controlled virtual machine or isolated lab environment. Never run it on production systems or against unauthorized targets.
+</Warning>
+
+## What is Virus Hunter: Code Defender?
+
+Virus Hunter: Code Defender is a Python-based 2D arcade game built with Pygame that teaches cybersecurity concepts through hands-on gameplay. Players control an Antivirus Avatar navigating a cyber-themed environment, progressing through four levels that mirror real-world attack and defense scenarios.
+
+The game isn't just entertainment — each level demonstrates a genuine security technique: dependency verification, reverse shell communication, persistence mechanisms, and system cleanup. By playing through the game, students and security enthusiasts gain practical exposure to concepts typically confined to textbooks.
+
+## How it works
+
+<CardGroup cols={2}>
+  <Card title="Level 1: System Scan" icon="shield-check">
+    Automatic dependency verification simulates the first step of any secure system: ensuring all required components are present and authenticated.
+  </Card>
+  <Card title="Level 2: Network Node" icon="network-wired">
+    Real-time TCP reverse shell communication with a listener process demonstrates how remote access tools establish and maintain connections.
+  </Card>
+  <Card title="Level 3: Persistence" icon="lock">
+    Cross-platform persistence simulation shows how malware survives reboots using Windows Registry, Linux crontab, and macOS LaunchAgents.
+  </Card>
+  <Card title="Level 4: Final Cleanup" icon="broom">
+    System restoration and secure exit teaches the remediation phase — how to remove persistence artifacts and restore a clean state.
+  </Card>
+</CardGroup>
+
+## Key features
+
+- **Educational gameplay** — Four progressive levels mapping to real attack phases
+- **Real reverse shell** — Functional TCP socket shell on port 5050, not a simulation
+- **Cross-platform persistence** — Works on Windows, Linux, and macOS
+- **Consent-first design** — Requires explicit user acknowledgment before any cybersecurity features activate
+- **Cleanup tool** — Removes all artifacts created during the session
+- **Listener CLI** — Full command interface with file download, directory navigation, and heartbeat monitoring
+
+## Who is this for?
+
+<CardGroup cols={2}>
+  <Card title="Security students" icon="graduation-cap">
+    Learn attack techniques in a safe, controlled environment with immediate visual feedback.
+  </Card>
+  <Card title="Educators" icon="chalkboard-teacher">
+    Use as a classroom demonstration tool for concepts like persistence and reverse shells.
+  </Card>
+  <Card title="CTF participants" icon="flag">
+    Practice recognizing and understanding common attacker techniques in an interactive format.
+  </Card>
+  <Card title="Developers" icon="code">
+    Study the Python implementation of network sockets, threading, and OS-level persistence APIs.
+  </Card>
+</CardGroup>
+
+## Quick navigation
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get Python, install dependencies, and run the game in minutes.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Start the listener, launch the game, and complete your first session.
+  </Card>
+  <Card title="Gameplay guide" icon="gamepad" href="/gameplay/overview">
+    Understand the controls, objectives, and how each level works.
+  </Card>
+  <Card title="Safety guide" icon="shield" href="/safety/lab-environment">
+    Set up a safe lab environment before running the game.
+  </Card>
+</CardGroup>

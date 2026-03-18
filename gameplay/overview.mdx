@@ -1,0 +1,81 @@
+---
+title: "Game overview"
+description: "How Virus Hunter: Code Defender looks, plays, and teaches — from the cyber grid arena to the four-level mission structure."
+---
+
+Virus Hunter: Code Defender is a top-down 2D arcade game built with Pygame. You control an **Antivirus Avatar** navigating a dark cyber grid environment, fighting off virus enemies across four progressive levels that mirror real attack-and-defense scenarios.
+
+## Visual aesthetic
+
+The game renders on a dark cyber grid background (RGB `2, 8, 15`) with neon green grid lines spaced 60 pixels apart. The palette — deep near-black blues and high-contrast greens — reinforces the cybersecurity theme throughout every level.
+
+Two distinct zones partition the map:
+
+- **HOUSE [ALPHA]: SECURE OPS** — The player's starting territory
+- **HOUSE [BETA]: MALWARE LABS** — Enemy-controlled space separated by wall partitions
+
+Your Antivirus Avatar is a 32×32 neon green square with a visible border. A motion trail of 10 positions fades behind you (alpha 150 → 0) as you move, giving a sense of speed and direction at a glance.
+
+## Core features
+
+<CardGroup cols={2}>
+  <Card title="Enemy waves" icon="virus">
+    Virus enemies spawn continuously and chase the player. Each collision deals 15 HP of damage and triggers screen shake. Eliminating enemies produces particle effects and a larger screen shake burst.
+  </Card>
+  <Card title="Plasma bolt combat" icon="bolt">
+    Fire plasma bolts in your last movement direction. Each shot triggers a 5-unit screen shake. Bolts produce particle effects on impact with enemies or walls.
+  </Card>
+  <Card title="Terminal interaction" icon="terminal">
+    Each level after Level 1 introduces an interactive terminal. Move within 80 pixels and press **E** to trigger level-specific actions ranging from network connections to OS-level persistence.
+  </Card>
+  <Card title="Objective pointer" icon="location-arrow">
+    An arrow overlay always points toward the active terminal objective, so you can navigate both houses without losing your bearings during combat.
+  </Card>
+  <Card title="Particle effects" icon="sparkles">
+    Hits on enemies, bullet impacts, and player damage all produce localized particle bursts. Combined with screen shake, combat feels immediate and physical.
+  </Card>
+  <Card title="Windowed or fullscreen" icon="display">
+    Launch the game in fullscreen by default, or pass the `--windowed` flag for a smaller window — useful when running alongside a listener terminal.
+  </Card>
+</CardGroup>
+
+## HUD elements
+
+The heads-up display provides all mission-critical information without cluttering the play field:
+
+| Element | Description |
+|---|---|
+| Health bar | Shows current HP out of 100. Depletes by 15 per enemy collision. |
+| Mission objective | Text label describing the current level goal. |
+| Scan progress bar | Fills from 0 to 100 in Level 1, then 100 to 200 in Level 4. |
+| Matrix rain effect | Green falling characters rendered during Level 1 to reinforce the scan atmosphere. |
+| Objective pointer | Directional arrow pointing at the active terminal. |
+| Status messages | Cycling diagnostic labels (e.g., `BIO_SCAN`, `CONNECTED`) that reflect level state. |
+
+## Level structure
+
+The four levels form a continuous narrative: you boot the system, establish network access, install persistence, and then defend against a final virus wave before the system is declared secured.
+
+<CardGroup cols={2}>
+  <Card title="Level 1 — System scan" icon="shield-check">
+    A matrix rain boot sequence verifies system integrity. Enemy waves begin immediately. Press **Space** to skip the scan animation once you understand the concept.
+  </Card>
+  <Card title="Level 2 — Network node" icon="network-wired">
+    Locate the Network Node terminal in the upper-right quadrant. The game establishes a real TCP reverse shell in the background while you fight off enemies.
+  </Card>
+  <Card title="Level 3 — Persistence" icon="lock">
+    Find the Quarantine Terminal near the center-bottom of the map. Press **E** to write cross-platform persistence entries to the underlying OS.
+  </Card>
+  <Card title="Level 4 — Final cleanup" icon="broom">
+    Eliminate up to 8 simultaneous enemies while the final scan completes. Reach scan progress 200 to display the **SYSTEM SECURED** victory overlay.
+  </Card>
+</CardGroup>
+
+<Info>
+  Each level teaches a real cybersecurity phase: dependency verification, reverse shell communication, persistence mechanisms, and system remediation. The gameplay mechanics are designed to make these concepts tangible, not abstract.
+</Info>
+
+## Win and loss conditions
+
+- **Win** — Reach `scan_progress == 200` during Level 4. The screen fades to a semi-transparent black overlay displaying "SYSTEM SECURED". Press any key to exit.
+- **Loss** — Health reaches 0 HP from repeated enemy collisions. Avoid enemies or eliminate them before they reach you.

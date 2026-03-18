@@ -1,0 +1,83 @@
+---
+title: 'Consent screen'
+description: 'How the informed-consent prompt works and what activates immediately after you press Y.'
+keywords: ['consent', 'safety', 'informed consent', 'educational', 'ethics']
+---
+
+Every game session begins with a consent screen before any network connection or persistence is established. You cannot accidentally start the shell or install persistence — both require an explicit keypress.
+
+## What you see
+
+When the game starts, a full-screen consent prompt appears with the title:
+
+```
+VIRUS HUNTER: CODE DEFENDER (MAJESTIC EDITION)
+```
+
+The screen lists what the project demonstrates:
+
+1. **Dependency Management** — the game's Python dependencies and how they are installed.
+2. **Remote Shell Communication (Simulation)** — a real reverse shell connecting to your listener.
+3. **Persistence Mechanisms (Simulated Marker)** — OS-level autostart entries written to your system.
+4. **System Cleanup** — how to undo everything the game installs.
+
+At the bottom:
+
+```
+Use ONLY in a controlled VM or lab environment.
+
+Press Y to accept and continue, or N to cancel.
+```
+
+## Y vs. N
+
+<Tabs>
+  <Tab title="Press Y (accept)">
+    The game calls two functions immediately and in sequence:
+
+    1. `shell.start()` — launches the reverse shell thread, which begins connecting to the listener on the configured host and port.
+    2. `create_persistence(host=args.host)` — writes the platform-specific persistence entry (Registry / crontab / LaunchAgent) and creates the marker file.
+
+    The game window then transitions to the main gameplay screen.
+
+    <Warning>
+    Both the shell and the persistence are active from this point forward, even if you close the game window. Run the cleanup tool when you are done.
+    </Warning>
+  </Tab>
+  <Tab title="Press N (cancel)">
+    The game calls `pygame.quit()` followed by `sys.exit()`. No network connection is made, no persistence is written, and no files are modified. The process exits cleanly.
+  </Tab>
+</Tabs>
+
+## What activates immediately after Y
+
+| Component | What happens |
+|---|---|
+| Reverse shell | Connects outbound to `--host` (default `10.12.73.251`) on port `5050`. Retries every 2 seconds if the listener is not yet running. |
+| Persistence | Writes an autostart entry for the current platform and creates `cyber_modules/simulated_startup/system_defender_autorun.txt`. |
+
+Both are active for the remainder of the session and survive closing the game window. They are only removed by running `python tools/cleanup_tool.py`.
+
+## Why consent-first design matters
+
+Educational security tools that install persistence and open shells carry real risk if run without understanding. The consent screen serves three purposes:
+
+- **Informed agreement** — you read exactly what the tool does before it does anything.
+- **Intentional activation** — an explicit keypress separates browsing the game from running it.
+- **Audit trail** — the screen text is the single canonical description of what the game installs, kept in sync with the source code.
+
+<Note>
+If you are using this tool in a classroom or workshop, ask each participant to read the consent screen themselves before pressing Y. Do not press Y on their behalf.
+</Note>
+
+## Understanding what you're agreeing to
+
+Before pressing Y, make sure you can answer yes to each of the following:
+
+- [ ] I am running this inside a virtual machine.
+- [ ] The VM is on an isolated network (host-only or NAT), not bridged to a production LAN.
+- [ ] I have taken a VM snapshot so I can restore a clean state.
+- [ ] I know how to run `python tools/cleanup_tool.py` when I am done.
+- [ ] I have permission to run security tools in this environment.
+
+If you are unsure about any of these, press **N** and review [Lab environment](/safety/lab-environment) before continuing.

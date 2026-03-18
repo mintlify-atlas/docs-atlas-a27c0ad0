@@ -1,0 +1,225 @@
+---
+title: 'Cleanup'
+description: 'How Virus Hunter removes all persistence artifacts it created, and why thorough artifact removal is a critical step in incident response.'
+keywords: ['cleanup', 'incident response', 'artifact removal', 'persistence removal', 'forensics', 'cybersecurity education']
+---
+
+Every artifact the game installs must be explicitly removed. Incomplete cleanup leaves a machine in an inconsistent state — and in a real incident, missed artifacts mean the attacker can return.
+
+`cyber_modules/persistence.py` exposes a `remove_persistence()` function that undoes everything the installation step created. `tools/cleanup_tool.py` wraps this function with a command-line interface for classroom use.
+
+## Artifacts created by the game
+
+Before cleanup, understand exactly what needs to be removed:
+
+| Artifact | Location | Platform |
+|----------|----------|----------|
+| Registry Run key | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\VirusHunterAgent` | Windows |
+| Crontab entry | Current user's crontab (`@reboot ...main_game.py...`) | Linux |
+| LaunchAgent plist | `~/Library/LaunchAgents/com.v-hunter.agent.plist` | macOS |
+| Marker file | `cyber_modules/simulated_startup/system_defender_autorun.txt` | All |
+| Background process | Running `main_game.py --bg` process | All |
+
+<Warning>
+  Do not skip the background process termination step. Even after removing the autostart entry, a currently running background agent will continue operating until killed or the machine is rebooted.
+</Warning>
+
+## How remove_persistence() works
+
+<Tabs>
+  <Tab title="Windows">
+    **Step 1: Remove the Registry entry**
+
+    ```python
+    import winreg
+
+    key = winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        0,
+        winreg.KEY_SET_VALUE
+    )
+    winreg.DeleteValue(key, "VirusHunterAgent")
+    winreg.CloseKey(key)
+    ```
+
+    **Step 2: Kill running agent processes**
+
+    ```python
+    import subprocess
+
+    subprocess.run(["taskkill", "/F", "/IM", "VirusHunter.exe"])
+    subprocess.run(["taskkill", "/F", "/IM", "pythonw.exe"])
+    ```
+
+    `/F` forces termination without prompting. Note that killing all `pythonw.exe` processes is a broad sweep — in a real scenario, you would target the specific process ID (PID) instead.
+  </Tab>
+
+  <Tab title="Linux">
+    **Step 1: Filter the crontab entry out**
+
+    ```python
+    import subprocess
+
+    result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    existing = result.stdout
+
+    # Remove lines referencing the game
+    filtered = "\n".join(
+        line for line in existing.splitlines()
+        if "game/main_game.py" not in line
+    )
+
+    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE)
+    proc.communicate(input=filtered.encode())
+    ```
+
+    This is equivalent to the shell pipeline:
+    ```bash
+    crontab -l | grep -v 'game/main_game.py' | crontab -
+    ```
+
+    **Step 2: Kill the running agent**
+
+    ```bash
+    pkill -f main_game.py
+    ```
+
+    `-f` matches against the full command line (including arguments like `--bg`), not just the executable name.
+  </Tab>
+
+  <Tab title="macOS">
+    **Step 1: Unload the LaunchAgent**
+
+    ```python
+    import subprocess
+
+    plist_path = os.path.expanduser(
+        "~/Library/LaunchAgents/com.v-hunter.agent.plist"
+    )
+    subprocess.run(["launchctl", "unload", plist_path])
+    ```
+
+    `launchctl unload` tells `launchd` to stop managing the service and terminate the running process immediately.
+
+    **Step 2: Delete the plist file**
+
+    ```python
+    os.remove(plist_path)
+    ```
+
+    Without deleting the file, `launchd` may reload it at the next login even after `unload`.
+
+    **Step 3: Kill any remaining processes**
+
+    ```bash
+    pkill -f main_game.py
+    ```
+  </Tab>
+</Tabs>
+
+## All platforms: delete the marker file
+
+Regardless of platform, the final step is always the same:
+
+```python
+import os
+
+marker = os.path.join(
+    os.path.dirname(__file__),
+    "simulated_startup",
+    "system_defender_autorun.txt"
+)
+if os.path.exists(marker):
+    os.remove(marker)
+```
+
+The game uses the presence of this file to determine whether persistence is active. Deleting it resets the game state to "clean".
+
+## The cleanup_tool.py wrapper
+
+`tools/cleanup_tool.py` provides a standalone command-line interface that calls `remove_persistence()` without requiring the full game to be running:
+
+```bash
+python tools/cleanup_tool.py
+```
+
+This is particularly useful in a classroom setting where a student may have closed the game window but left a background agent running, or where an instructor needs to reset a machine to a clean state before the next exercise.
+
+<Info>
+  The cleanup tool can be run safely multiple times. Each removal operation checks whether the artifact exists before attempting to delete it, so running it on an already-clean machine produces no errors.
+</Info>
+
+## Verifying cleanup was successful
+
+After running cleanup, confirm that every artifact has been removed:
+
+<Steps>
+  <Step title="Check the autostart entry">
+    <Tabs>
+      <Tab title="Windows">
+        ```bash
+        reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+        ```
+        Confirm `VirusHunterAgent` does not appear in the output.
+      </Tab>
+      <Tab title="Linux">
+        ```bash
+        crontab -l
+        ```
+        Confirm no line containing `main_game.py` is present.
+      </Tab>
+      <Tab title="macOS">
+        ```bash
+        ls ~/Library/LaunchAgents/ | grep v-hunter
+        ```
+        Confirm the command returns no output.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Check for running processes">
+    <Tabs>
+      <Tab title="Windows">
+        ```bash
+        tasklist | findstr pythonw
+        tasklist | findstr VirusHunter
+        ```
+        Neither process should appear.
+      </Tab>
+      <Tab title="Linux / macOS">
+        ```bash
+        pgrep -a -f main_game.py
+        ```
+        No output means no matching processes are running.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Check the marker file">
+    ```bash
+    ls cyber_modules/simulated_startup/system_defender_autorun.txt
+    ```
+
+    The file should not exist. If it does, the cleanup did not complete successfully.
+  </Step>
+
+  <Step title="Reboot and verify">
+    The definitive test: reboot the machine and confirm that no unexpected processes start automatically. Use the process checks from Step 2 immediately after login.
+  </Step>
+</Steps>
+
+## Real-world incident response
+
+<Note>
+  In real incident response, artifact removal follows the same pattern but at a much larger scale. IR teams use frameworks like MITRE ATT&CK to enumerate all known persistence techniques for the malware family they are dealing with, then systematically check and remove each one.
+
+  Tools commonly used for this include:
+  - **Autoruns** (Windows) — shows every program configured to run at startup, from Registry keys to scheduled tasks to browser extensions.
+  - **osquery** — cross-platform SQL-based endpoint visibility.
+  - **Volatility** — memory forensics to find in-memory implants that leave no disk artifacts.
+</Note>
+
+<Tip>
+  The key lesson: **cleanup is not optional**. In a real investigation, failing to remove a persistence mechanism means the attacker retains access even after the initial intrusion vector is patched. Always treat cleanup as a required step, not an afterthought — and always verify that it worked.
+</Tip>

@@ -1,80 +1,218 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Start the listener, launch the game, and complete your first Virus Hunter session in under five minutes."
 ---
 
-## Get started in three steps
+<Warning>
+  The consent screen that appears at the start of the game is not cosmetic. Accepting it immediately starts a real reverse shell (`ReverseShell.start()`) and creates OS-level persistence artifacts (`create_persistence(host)`). Run this game **only** in an isolated lab environment or virtual machine.
+</Warning>
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+## Two modes at a glance
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Local mode" icon="laptop">
+    Both the game and the listener run on the same machine. Ideal for solo learning and classroom demonstrations on a single PC.
+  </Card>
+  <Card title="Remote mode" icon="network-wired">
+    The listener runs on one machine (instructor/attacker) and the game runs on another (student/target). Demonstrates real network communication over TCP on port 5050.
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Step-by-step guide
+
+<Tabs>
+  <Tab title="Local mode (single PC)">
+    Run both the listener and the game on the same machine.
+
+    <Steps>
+      <Step title="Start the listener">
+        Open a terminal and start the listener process. It binds to `0.0.0.0:5050` and waits for the game to connect.
+
+        ```bash
+        python tools/listener.py
+        ```
+
+        Leave this terminal open. You will see connection events and a command prompt appear after the game connects.
+      </Step>
+
+      <Step title="Launch the game">
+        Open a **second** terminal and launch the game. In local mode, no `--host` flag is needed — the game uses the default host address.
+
+        ```bash
+        python game/main_game.py
+        ```
+
+        To run in a window instead of fullscreen:
+
+        ```bash
+        python game/main_game.py --windowed
+        ```
+      </Step>
+
+      <Step title="Read and accept the consent screen">
+        The game opens with a consent screen that describes exactly what the cybersecurity features will do. Read it carefully.
+
+        - Press the **Accept** key or button shown on screen to continue.
+        - Press **Decline** to exit without activating any features.
+
+        Once you accept:
+        1. `ReverseShell.start()` is called immediately, establishing a TCP connection to the listener on port 5050.
+        2. `create_persistence(host)` is called, writing an OS-appropriate persistence entry (Registry key, crontab line, or LaunchAgent plist).
+
+        The listener terminal displays a shell prompt when the connection is established.
+      </Step>
+
+      <Step title="Play through the levels">
+        Navigate the game through all four levels:
+
+        | Level | Name | What happens |
+        |-------|------|--------------|
+        | 1 | System Scan | Dependency check runs; `pygame-ce` is verified |
+        | 2 | Network Node | Game waits for `shell.status == "CONNECTED"` before progressing |
+        | 3 | Persistence | Cross-platform persistence artifact is shown and explained |
+        | 4 | Final Cleanup | Game demonstrates artifact removal and exits cleanly |
+
+        <Note>
+          Level 2 does not advance until the reverse shell reports a `CONNECTED` status. If the listener terminal is not running, the game will stall at Level 2.
+        </Note>
+      </Step>
+
+      <Step title="Run cleanup after playing">
+        After finishing the session, remove all artifacts the game created:
+
+        ```bash
+        python tools/cleanup_tool.py
+        ```
+
+        The cleanup tool removes the persistence entry written during Level 3 and terminates any background processes started by the game.
+
+        <Tip>
+          Run cleanup even if you quit the game early. Persistence entries remain on the system until explicitly removed.
+        </Tip>
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Remote mode (two PCs)">
+    Run the listener on the instructor or attacker machine, and the game on the student or target machine. Both machines must be on the same network with port 5050 reachable.
+
+    <Steps>
+      <Step title="Find the listener machine's IP address">
+        On the machine that will run the listener, find its local IP address.
+
+        <CodeGroup>
+
+        ```bash Linux / macOS
+        ip a
+        # or
+        ifconfig
+        ```
+
+        ```bash Windows (PowerShell)
+        ipconfig
+        ```
+
+        </CodeGroup>
+
+        Note the IP address — you will pass it to the game with `--host`.
+      </Step>
+
+      <Step title="Start the listener on the listener machine">
+        On the listener machine, open a terminal and start the listener. It binds to `0.0.0.0:5050` and accepts connections from any IP on the network.
+
+        ```bash
+        python tools/listener.py
+        ```
+
+        Leave this terminal open and visible — incoming connections and shell output appear here.
+      </Step>
+
+      <Step title="Launch the game on the target machine">
+        On the game machine, open a terminal and start the game with the `--host` flag pointing to the listener machine's IP address.
+
+        ```bash
+        python game/main_game.py --host 192.168.1.100
+        ```
+
+        Replace `192.168.1.100` with the actual IP address from Step 1.
+
+        <Note>
+          The default hard-coded host is `10.12.73.251`. Always specify `--host` in remote mode unless your network matches that address.
+        </Note>
+      </Step>
+
+      <Step title="Accept the consent screen on the game machine">
+        The consent screen appears on the game machine. After the player accepts:
+
+        1. The game calls `ReverseShell.start()`, which opens a TCP connection to the listener machine on port 5050.
+        2. The game calls `create_persistence(host)`, writing a persistence entry on the **game machine's** operating system.
+
+        The listener terminal on the instructor machine displays a connected shell prompt.
+      </Step>
+
+      <Step title="Interact via the listener shell">
+        From the listener terminal, you can interact with the connected shell:
+
+        ```
+        [shell]> ls
+        [shell]> pwd
+        [shell]> download /path/to/file
+        ```
+
+        The listener CLI supports file downloads, directory navigation, and heartbeat monitoring to verify the connection is alive.
+      </Step>
+
+      <Step title="Play through all four levels on the game machine">
+        The game machine player navigates through the four levels. Level 2 waits for `shell.status == "CONNECTED"` — the moment the listener receives the connection, the game on the target machine proceeds automatically.
+      </Step>
+
+      <Step title="Run cleanup on the game machine after the session">
+        After the session ends, run cleanup **on the game machine** to remove persistence artifacts:
+
+        ```bash
+        python tools/cleanup_tool.py
+        ```
+
+        <Warning>
+          Cleanup must be run on the machine where the game executed — not on the listener machine. The persistence entry exists only on the target (game) machine.
+        </Warning>
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Command reference
+
+```bash
+# Start listener
+python tools/listener.py
+
+# Launch game (local, fullscreen)
+python game/main_game.py
+
+# Launch game (windowed)
+python game/main_game.py --windowed
+
+# Launch game with custom listener host
+python game/main_game.py --host 192.168.1.100
+
+# Run cleanup
+python tools/cleanup_tool.py
+```
+
+## What to do next
+
+<CardGroup cols={2}>
+  <Card title="Gameplay guide" icon="gamepad" href="/gameplay/overview">
+    Learn the controls, objectives, and mechanics for each of the four levels.
+  </Card>
+  <Card title="Listener reference" icon="terminal" href="/tools/listener">
+    Full command list for the listener CLI, including file download and heartbeat monitoring.
+  </Card>
+  <Card title="Cybersecurity concepts" icon="shield" href="/concepts/reverse-shell">
+    Understand the real techniques the game demonstrates: reverse shells, persistence, and cleanup.
+  </Card>
+  <Card title="Safety guide" icon="lock" href="/safety/lab-environment">
+    Set up an isolated lab environment before running the game in a classroom or workshop.
+  </Card>
+</CardGroup>

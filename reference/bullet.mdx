@@ -1,0 +1,149 @@
+---
+title: 'Bullet'
+description: 'The Bullet sprite: plasma bolt appearance, directional rotation, high-velocity movement, and trail rendering.'
+keywords: ['bullet', 'plasma', 'projectile', 'sprite', 'trail']
+---
+
+# Bullet
+
+`game/bullet.py` defines the `Bullet` class, a `pygame.sprite.Sprite` representing a plasma bolt fired by the player. Bullets travel in a straight line, leave a short cyan trail, and are removed on wall collision or when they leave the screen.
+
+```python
+class Bullet(pygame.sprite.Sprite):
+    def __init__(self, x: float, y: float, direction: pygame.Vector2) -> None
+    def update(self) -> None
+    def draw(self, screen: pygame.Surface) -> None
+```
+
+---
+
+## Attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `image` | `pygame.Surface` | 20×8 px plasma bolt, rotated to match `direction`. White ellipse core with a cyan outer glow. |
+| `rect` | `pygame.Rect` | Bounding rect used for collision detection. Centred on `(x, y)` after rotation. |
+| `pos` | `pygame.Vector2` | Sub-pixel position, updated each frame. |
+| `direction` | `pygame.Vector2` | Normalised unit vector representing the bullet's travel direction. |
+| `speed` | `int` | `18` — pixels per frame. |
+| `spawn_time` | `int` | `pygame.time.get_ticks()` at construction. Available for lifetime-based expiry if needed. |
+
+---
+
+## `__init__(x, y, direction)`
+
+<ParamField path="x" type="float" required>
+  Horizontal spawn position. Set to `player.pos.x` at the moment of firing.
+</ParamField>
+
+<ParamField path="y" type="float" required>
+  Vertical spawn position. Set to `player.pos.y` at the moment of firing.
+</ParamField>
+
+<ParamField path="direction" type="pygame.Vector2" required>
+  Normalised direction vector. In the main game loop this is `last_direction`, which tracks the most recent non-zero movement direction.
+</ParamField>
+
+The sprite surface is built in three steps:
+
+```python
+# 1. Allocate a 20x8 transparent surface
+self.image = pygame.Surface((20, 8), pygame.SRCALPHA)
+
+# 2. Draw the plasma bolt
+pygame.draw.ellipse(self.image, (255, 255, 255), (10, 2, 10, 4))  # white core
+pygame.draw.ellipse(self.image, (0, 255, 255),   (0,  0, 20, 8), 2)  # cyan glow border
+
+# 3. Rotate to align with travel direction
+angle = direction.angle_to(pygame.Vector2(1, 0))
+self.image = pygame.transform.rotate(self.image, angle)
+```
+
+The angle is computed relative to the positive x-axis `(1, 0)`, so a bullet fired to the right is unrotated, upward bullets rotate +90°, and so on.
+
+<Note>
+  `pygame.transform.rotate()` enlarges the surface to fit the rotated content. The `rect` is re-derived from the rotated image and centred on `(x, y)`, so the bullet origin stays accurate regardless of angle.
+</Note>
+
+Firing a bullet:
+
+```python
+# In main_game.py — SPACE key handler (levels 2–4)
+bullets.add(Bullet(player.pos.x, player.pos.y, last_direction))
+shake_amount = 5  # recoil
+```
+
+---
+
+## `update()`
+
+Advances the bullet along its direction vector each frame:
+
+```python
+def update(self) -> None:
+    self.pos += self.direction * self.speed
+    self.rect.center = self.pos
+```
+
+No delta-time correction is applied; movement is frame-rate-dependent (60 FPS target). At `speed = 18`, a bullet crosses a 1200 px screen in approximately 67 frames (~1.1 s).
+
+`update()` is called by the `bullets` sprite group each frame:
+
+```python
+bullets.update()  # in main_game.py game loop
+```
+
+---
+
+## `draw(screen)`
+
+Renders the bullet's kinetic trail and the plasma image.
+
+<ParamField path="screen" type="pygame.Surface" required>
+  The active display surface.
+</ParamField>
+
+```python
+def draw(self, screen: pygame.Surface) -> None:
+    trail_start = self.pos - self.direction * 15
+    pygame.draw.line(screen, (0, 150, 255), self.pos, trail_start, 2)
+    screen.blit(self.image, self.rect)
+```
+
+A 2-px blue line `(0, 150, 255)` is drawn 15 px behind the bullet centre, giving a short motion-blur streak effect. The rotated plasma image is then blitted on top.
+
+<Note>
+  The main game loop blits bullets a second time with the shake offset applied:
+  ```python
+  for b in bullets:
+      screen.blit(b.image, b.rect.move(offset))
+  ```
+  This means the trail line drawn by `draw()` is not shaken; only the image is offset. At low shake values this difference is imperceptible.
+</Note>
+
+---
+
+## Lifecycle
+
+<Steps>
+  <Step title="Spawned">
+    Created on **SPACE** keypress (Levels 2–4) at the player's current position, travelling in `last_direction`.
+  </Step>
+  <Step title="In flight">
+    `bullets.update()` moves the bullet 18 px per frame. The group is iterated to check for wall and screen-boundary hits.
+  </Step>
+  <Step title="Wall impact">
+    If `bullet.rect.colliderect(wall)` is true for any wall rect, 5 cyan `(0, 255, 255)` particles are spawned at `bullet.pos` and the bullet is removed from the group:
+    ```python
+    for _ in range(5):
+        particles.append(Particle(bullet.pos.x, bullet.pos.y, (0, 255, 255)))
+    bullets.remove(bullet)
+    ```
+  </Step>
+  <Step title="Off-screen removal">
+    If `pos.x` or `pos.y` is outside `[0, width]` / `[0, height]`, the bullet is removed with no particle effect.
+  </Step>
+  <Step title="Enemy hit">
+    `pygame.sprite.groupcollide(enemies, bullets, True, True)` removes both the enemy and the bullet simultaneously, spawning 15 red particles and applying `shake_amount = 10`.
+  </Step>
+</Steps>

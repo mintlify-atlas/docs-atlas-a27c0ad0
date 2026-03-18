@@ -1,0 +1,123 @@
+---
+title: "Levels"
+description: "Detailed breakdown of all four levels: objectives, mechanics, progression triggers, and the cybersecurity concept each level teaches."
+---
+
+Virus Hunter: Code Defender has four sequential levels. Each level must be completed before the next unlocks. The transitions are automatic once the win condition is satisfied.
+
+<Steps>
+  <Step title="Level 1 — System scan">
+
+    **Objective:** Wait for (or skip) the boot scan sequence.
+
+    **Mission text:** `BIO_SCAN` → `SYS_INTEGRITY` → `DEP_CHECK` → `NET_READY`
+
+    Level 1 opens with a matrix rain effect — green falling characters that fill the screen — simulating a dependency verification pass. The scan progress bar increments automatically at **1.2 units per frame**, running from 0 to 100.
+
+    Four status messages cycle during the scan:
+
+    | Message | Meaning |
+    |---|---|
+    | `BIO_SCAN` | Biometric signature check |
+    | `SYS_INTEGRITY` | Core file integrity verification |
+    | `DEP_CHECK` | Dependency presence and version check |
+    | `NET_READY` | Network interface readiness |
+
+    Enemy viruses begin spawning immediately (up to 6 at once, 8% spawn chance per frame). You can fight them or focus on survival until the scan completes.
+
+    **Progression:** Scan progress reaches 100. Press **Space** at any time to skip directly to 100 if you want to move on faster.
+
+    <Info>
+      This level mirrors the first step in any real software deployment: verifying that all dependencies are present and have not been tampered with. Tools like `pip check`, `npm audit`, and package hash verification perform the same role in production systems.
+    </Info>
+
+  </Step>
+  <Step title="Level 2 — Network node">
+
+    **Objective:** Locate the Network Node terminal and wait for the shell to connect.
+
+    **Mission text:** `LOCATE NETWORK NODE`
+
+    A terminal appears at **three-quarters of the screen width, one-quarter of the screen height** (upper-right quadrant). The objective pointer arrow guides you there.
+
+    While you navigate and fight, the game initiates a TCP connection to `host:5050` in a background thread. The shell cycles through three status messages:
+
+    | Status | Meaning |
+    |---|---|
+    | `CONNECTING` | Initial connection attempt in progress |
+    | `RETRYING` | Connection failed, retrying |
+    | `CONNECTED` | Shell established successfully |
+
+    Pressing **E** near the terminal provides a visual interaction response, but the level advances automatically when `shell.status == "CONNECTED"`.
+
+    **Progression:** Shell status reaches `CONNECTED`. Transitions to Level 3.
+
+    <Info>
+      This level demonstrates a **reverse shell**: the target machine initiates the outbound connection to the attacker's listener, bypassing inbound firewall rules that would block a traditional forward shell. The listener process (`listener.py`) must be running and waiting on port 5050 before or during Level 2.
+    </Info>
+
+  </Step>
+  <Step title="Level 3 — Persistence">
+
+    **Objective:** Reach the Quarantine Terminal and activate persistence.
+
+    **Mission text:** `Find Quarantine Terminal`
+
+    A second terminal spawns at the **horizontal center, three-quarters down the screen** (center-bottom area). Navigate to it while managing the ongoing enemy spawns.
+
+    When you press **E** within 80 pixels of this terminal, the game calls `create_persistence()`. This function writes actual OS-level persistence entries to the host system:
+
+    | Platform | Persistence method |
+    |---|---|
+    | Windows | Registry key under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
+    | Linux | Entry appended to the user's `crontab` |
+    | macOS | LaunchAgent plist written to `~/Library/LaunchAgents/` |
+
+    **Progression:** Persistence created successfully. Transitions to Level 4.
+
+    <Warning>
+      Pressing **E** at the Quarantine Terminal writes **real persistence entries** to the operating system you are running the game on. This is not a simulation. Run the game only inside a dedicated virtual machine or isolated lab environment. Use the cleanup tool after every session to remove these artifacts.
+
+      See [Lab environment setup](/safety/lab-environment) and the [Cleanup tool](/tools/cleanup-tool) for instructions.
+    </Warning>
+
+    <Info>
+      Persistence is how malware survives a system reboot without user interaction. Registry `Run` keys, cron jobs, and LaunchAgents are among the most common persistence mechanisms documented in the MITRE ATT&CK framework under [T1547 Boot or Logon Autostart Execution](https://attack.mitre.org/techniques/T1547/).
+    </Info>
+
+  </Step>
+  <Step title="Level 4 — Final cleanup">
+
+    **Objective:** Eliminate the virus wave while the final system scan completes.
+
+    **Mission text:** `ELIMINATE ALL THREATS`
+
+    Level 4 escalates the enemy pressure. Up to **8 viruses** can be active simultaneously (spawn chance drops slightly to **5% per frame**). Simultaneously, the scan progress bar resumes from 100 and increments at **0.4 units per frame**, climbing toward 200.
+
+    You must survive long enough for the scan to complete. Eliminating enemies clears the field and reduces collision risk, but the scan advances regardless of kill count.
+
+    **Win condition:** `scan_progress >= 200`
+
+    When the scan reaches 200, a semi-transparent black overlay fills the screen and displays:
+
+    ```text
+    SYSTEM SECURED
+    ```
+
+    Press any key to exit the game.
+
+    <Info>
+      The final scan represents the remediation phase of an incident response: verifying system integrity after threats have been neutralized. In real environments this involves re-running integrity checks, reviewing logs, and confirming that no additional persistence mechanisms were installed by the attacker.
+    </Info>
+
+  </Step>
+</Steps>
+
+## Level summary
+
+| Level | Name | Core mechanic | Win condition |
+|---|---|---|---|
+| 1 | System scan | Scan progress bar (1.2/frame) | Progress ≥ 100 or press Space |
+| 2 | Network node | Reverse shell connection | `shell.status == "CONNECTED"` |
+| 3 | Persistence | Press E at Quarantine Terminal | `create_persistence()` completes |
+| 4 | Final cleanup | Survive while scan fills to 200 | `scan_progress >= 200` |

