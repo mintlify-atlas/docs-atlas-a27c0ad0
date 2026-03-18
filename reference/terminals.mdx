@@ -163,7 +163,10 @@ The direction vector is normalised before scaling, so the enemy always moves at 
 
 ### Spawning behaviour
 
-Enemies are spawned by the main loop under two conditions:
+Enemies are spawned by the main loop under two concurrent conditions:
 
-- **Per-level cap** — up to `4 + level * 2` enemies exist at once (e.g. 10 in Level 4). Spawned at 2% probability per frame at a random position at least 300 px from the player.
-- **Level 1 special** — an additional spawn condition allows up to 6 enemies at 8% probability, spawning at fully random screen positions (no distance check).
+- **General spawner** — when `len(enemies) < (4 + level * 2)`, there is a 2% spawn chance per frame at a random position at least 300 px from the player. This cap grows with level (Level 1: 6, Level 2: 8, Level 3: 10, Level 4: 12).
+- **Level 1 extra spawner** — while `scan_progress < 100`, an additional check spawns up to 6 enemies at 8% probability, at fully random screen positions with no minimum-distance check.
+- **Level 4 explicit cap** — an additional check caps Level 4 spawns at 8 with a 5% spawn chance.
+
+Both conditions run every frame, so the effective enemy count in Level 1 can reach 6 from either spawner, and in Level 4 the explicit cap of 8 applies via a separate check.

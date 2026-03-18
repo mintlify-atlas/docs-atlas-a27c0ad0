@@ -21,10 +21,16 @@ The listener binds to `0.0.0.0:5050` using `SO_REUSEADDR`, so the port is immedi
 Once the game connects you will see:
 
 ```
-[*] Listening on 0.0.0.0:5050
-[+] Connection received from 10.12.73.251
+========================================
+ VIRUS HUNTER: MAJESTIC COMMAND CENTER 
+========================================
+[*] Awaiting connection on 0.0.0.0:5050
+[+] SECURE LINK ESTABLISHED: 10.12.73.251:54321
+[*] Privileged Shell Active. Full system access enabled.
+[*] Controls: 'quit' to close, any other text to execute.
+----------------------------------------
 
-operator@~ $
+operator@system $
 ```
 
 The prompt updates automatically as you navigate directories (see [Prompt and directory tracking](#prompt-and-directory-tracking) below).
@@ -39,7 +45,7 @@ The listener translates a small set of cross-platform commands before sending th
 | `cd <path>` | Change directory — the session tracks state across commands |
 | `cat <file>` | View a file's contents (maps to `type` on Windows) |
 | `pwd` | Print the current working path |
-| `download <file>` | Transfer a file to `tools/downloads/` on the operator machine |
+| `download <file>` | Transfer a file to `downloads/` (relative to listener's cwd) on the operator machine |
 | `quit` | End the session and close the connection |
 
 <Tip>
@@ -64,26 +70,27 @@ Any command not in the table above is forwarded to the remote shell as-is, so yo
     ```
   </Step>
   <Step title="Listener decodes and saves">
-    The listener detects the `[FILE_BEGIN:...]` tag, calls `base64.b64decode`, and writes the file to:
+    The listener detects the `[FILE_BEGIN:...]` tag, calls `base64.b64decode`, and writes the file to a `downloads/` subdirectory relative to wherever you ran `listener.py` from:
 
     ```
-    tools/downloads/secrets.txt
+    ./downloads/secrets.txt
     ```
 
-    The directory is relative to your current working directory when you started the listener.
+    The directory is created automatically if it does not exist.
   </Step>
   <Step title="Confirmation">
     The listener prints a confirmation line and returns you to the prompt:
 
     ```
-    [+] Saved file: tools/downloads/secrets.txt
+    [SYSTEM] SUCCESS: Downloaded secrets.txt to /path/to/downloads/secrets.txt
+
     operator@target $
     ```
   </Step>
 </Steps>
 
 <Note>
-The `tools/downloads/` directory is created automatically on first use if it does not already exist.
+The `downloads/` directory is created automatically on first use. The listener uses a 65536-byte receive buffer for large file transfers.
 </Note>
 
 ## Prompt and directory tracking
@@ -112,6 +119,12 @@ The listener runs an outer `while True` loop. When the connection drops (game ex
 ```
 [-] Connection closed. Waiting for next connection...
 [*] Listening on 0.0.0.0:5050
+```
+
+When a connection closes, the listener prints:
+
+```
+[*] Secure link terminated. Awaiting new connection...
 ```
 
 You do not need to restart `listener.py` between game sessions.

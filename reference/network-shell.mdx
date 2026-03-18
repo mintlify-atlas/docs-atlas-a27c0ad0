@@ -52,7 +52,7 @@ class ReverseShell:
 ## `__init__(host, port)`
 
 <ParamField path="host" type="str" default="127.0.0.1">
-  IP address of the attacker-controlled listener. The game passes `args.host` here.
+  IP address of the attacker-controlled listener. The class default is `"127.0.0.1"`, but the game always passes `args.host` which defaults to `"10.12.73.251"` via `argparse`.
 </ParamField>
 
 <ParamField path="port" type="int" default="5050">
